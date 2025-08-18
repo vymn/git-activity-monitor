@@ -18,7 +18,7 @@ DEFAULT_CONFIG = {
         "file_change_weight": 5,
         "line_change_weight": 0.1,
     },
-    "goals": {"daily_hours": 8, "weekly_commits": 20, "monthly_repos": 5},
+    "goals": {"daily_hours": 8, "weekly_commits": 20, "monthly_repos": 2},
 }
 
 
@@ -33,6 +33,7 @@ def load_config():
         if config_path.exists():
             with open(config_path) as f:
                 user_config = yaml.safe_load(f)
+
 
             # Merge with defaults
             config = DEFAULT_CONFIG.copy()

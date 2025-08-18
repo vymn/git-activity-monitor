@@ -49,6 +49,35 @@ MONITOR_PATH = os.path.expanduser(config.get("monitor_path", "~/developement"))
 DB_PATH = os.path.join(LOG_DIR, "activity_monitor.db")
 
 console = Console()
+VERBOSE = False  # Global verbose flag
+
+
+def set_verbose(verbose=True):
+    """Set global verbose flag."""
+    global VERBOSE
+    VERBOSE = verbose
+
+
+def verbose_print(msg, style="dim"):
+    """Print verbose messages only if VERBOSE is True."""
+    if VERBOSE:
+        console.print(f"[{style}][VERBOSE][/{style}] {msg}")
+
+
+def debug_print(msg):
+    """Print debug messages."""
+    if VERBOSE:
+        console.print(f"[cyan][DEBUG][/cyan] {msg}")
+
+
+def info_print(msg):
+    """Print info messages."""
+    console.print(f"[green][INFO][/green] {msg}")
+
+
+def error_print(msg):
+    """Print error messages."""
+    console.print(f"[red][ERROR][/red] {msg}")
 
 
 class DatabaseManager:
@@ -243,15 +272,50 @@ class EnhancedActivityTracker:
         self.observer.schedule(handler, MONITOR_PATH, recursive=True)
         self.observer.start()
 
+        info_print(f"🚀 Activity Monitor Started")
+        verbose_print(f"Monitoring directory: {MONITOR_PATH}")
+        verbose_print(f"Database location: {DB_PATH}")
+        verbose_print(f"Idle threshold: {IDLE_THRESHOLD} seconds")
+        verbose_print(f"Scan interval: {SCAN_INTERVAL} seconds")
+
         console.print(
             Panel.fit(
                 f"[bold green]🚀 Activity Monitor Started[/bold green]\n"
                 f"📁 Monitoring: {MONITOR_PATH}\n"
                 f"💾 Database: {DB_PATH}\n"
-                f"⏱️  Idle threshold: {IDLE_THRESHOLD}s",
+                f"⏱️  Idle threshold: {IDLE_THRESHOLD}s\n"
+                f"🔍 Verbose mode: {'ON' if VERBOSE else 'OFF'}",
                 border_style="green",
             )
         )
+
+        # Check if monitoring path exists and contains git repos
+        if not os.path.exists(MONITOR_PATH):
+            error_print(f"Monitoring path does not exist: {MONITOR_PATH}")
+            return None
+
+        # Look for git repositories in the monitoring path
+        git_repos = []
+        try:
+            for root, dirs, files in os.walk(MONITOR_PATH):
+                if ".git" in dirs:
+                    git_repos.append(root)
+        except Exception as e:
+            error_print(f"Error scanning for git repos: {e}")
+
+        if git_repos:
+            info_print(f"Found {len(git_repos)} Git repositories:")
+            for repo in git_repos[:5]:  # Show first 5
+                verbose_print(f"  - {os.path.basename(repo)} ({repo})")
+            if len(git_repos) > 5:
+                verbose_print(f"  ... and {len(git_repos) - 5} more repositories")
+        else:
+            console.print(
+                "[yellow]⚠️  No Git repositories found in monitoring path[/yellow]"
+            )
+            verbose_print(
+                "Make sure you have Git repositories in the monitored directory"
+            )
 
         # Start the monitoring loop in a separate thread
         monitor_thread = threading.Thread(target=self._monitor_loop)
@@ -281,6 +345,9 @@ class EnhancedActivityTracker:
     def _check_idle_sessions(self):
         """Check for idle sessions and accumulate time."""
         now = time.time()
+        verbose_print(f"Checking for idle sessions (threshold: {IDLE_THRESHOLD}s)")
+
+        idle_count = 0
         for repo_path, (start, last) in list(self.active_sessions.items()):
             if start and (now - last > IDLE_THRESHOLD):
                 duration = last - start
@@ -290,9 +357,14 @@ class EnhancedActivityTracker:
                 self.active_sessions[repo_path] = (None, None)
 
                 repo_name = os.path.basename(repo_path)
-                console.print(
-                    f"[yellow]⏸️  Session paused: {repo_name} ({duration/60:.1f}min)[/yellow]"
+                info_print(f"⏸️  Session paused: {repo_name} ({duration/60:.1f}min)")
+                verbose_print(
+                    f"Moved to accumulated time: {self.accumulated_time[repo_path]/60:.1f}min total"
                 )
+                idle_count += 1
+
+        if idle_count == 0 and len(self.active_sessions) > 0:
+            verbose_print("No idle sessions found")
 
     def _check_commits(self):
         """Check for new commits and save completed sessions."""
@@ -691,28 +763,39 @@ class EnhancedActivityTracker:
 
 
 class EnhancedChangeHandler(FileSystemEventHandler):
-    """Enhanced file system event handler."""
+    """Enhanced file system event handler with verbose logging."""
 
     def __init__(self, tracker):
         self.tracker = tracker
+        verbose_print(f"File system handler initialized for: {MONITOR_PATH}")
 
     def on_modified(self, event):
         if event.is_directory:
+            verbose_print(f"Directory change ignored: {event.src_path}")
             return
+
+        verbose_print(f"File change detected: {event.src_path}")
 
         # Skip certain file types
         skip_extensions = {".pyc", ".log", ".tmp", ".swp", ".DS_Store"}
         skip_paths = {".git", "__pycache__", "node_modules", ".vscode"}
 
         if any(event.src_path.endswith(ext) for ext in skip_extensions):
+            verbose_print(
+                f"Skipped file (extension): {os.path.basename(event.src_path)}"
+            )
             return
 
         if any(path_part in event.src_path for path_part in skip_paths):
+            verbose_print(f"Skipped file (path): {event.src_path}")
             return
 
         repo_path = get_repo_root(event.src_path)
         if not repo_path:
+            verbose_print(f"Not in git repo: {event.src_path}")
             return
+
+        debug_print(f"Processing change in repo: {os.path.basename(repo_path)}")
 
         now = time.time()
         start, last = self.tracker.active_sessions.get(repo_path, (None, None))
@@ -724,9 +807,28 @@ class EnhancedChangeHandler(FileSystemEventHandler):
 
         if start is None:
             self.tracker.active_sessions[repo_path] = (now, now)
-            console.print(f"[green]▶️  Started: {os.path.basename(repo_path)}[/green]")
+            info_print(f"🟢 Started session: {os.path.basename(repo_path)}")
+            verbose_print(
+                f"Session start time: {datetime.fromtimestamp(now).strftime('%H:%M:%S')}"
+            )
         else:
             self.tracker.active_sessions[repo_path] = (start, now)
+            session_duration = now - start
+            verbose_print(
+                f"Updated session: {os.path.basename(repo_path)} (active for {session_duration/60:.1f}min)"
+            )
+
+    def on_created(self, event):
+        if not event.is_directory and VERBOSE:
+            verbose_print(f"File created: {event.src_path}")
+
+    def on_deleted(self, event):
+        if not event.is_directory and VERBOSE:
+            verbose_print(f"File deleted: {event.src_path}")
+
+    def on_moved(self, event):
+        if not event.is_directory and VERBOSE:
+            verbose_print(f"File moved: {event.src_path} -> {event.dest_path}")
 
 
 # Utility functions
@@ -855,15 +957,28 @@ class Analytics:
 
 
 # CLI Commands
-def cmd_start():
+def cmd_start(verbose=False):
     """Start activity monitoring."""
+    set_verbose(verbose)
+
+    info_print("Initializing Activity Monitor...")
+    verbose_print("Setting up database and tracker...")
+
     tracker = EnhancedActivityTracker()
     observer = tracker.start_monitoring()
+
+    if observer is None:
+        error_print("Failed to start monitoring")
+        return
+
+    info_print("Press Ctrl+C to stop monitoring")
+    verbose_print("Monitoring loop starting...")
 
     try:
         while tracker.running:
             time.sleep(1)
     except KeyboardInterrupt:
+        info_print("Stopping monitor...")
         tracker.stop_monitoring()
 
 
@@ -892,6 +1007,56 @@ def cmd_export(format="csv", days=30):
     analytics.export_data(format, days)
 
 
+def cmd_test():
+    """Test if file monitoring is working."""
+    info_print("🧪 Testing file monitoring...")
+
+    # Check if monitor path exists
+    if not os.path.exists(MONITOR_PATH):
+        error_print(f"Monitor path doesn't exist: {MONITOR_PATH}")
+        return
+
+    info_print(f"✅ Monitor path exists: {MONITOR_PATH}")
+
+    # Check for git repos
+    git_repos = []
+    for root, dirs, files in os.walk(MONITOR_PATH):
+        if ".git" in dirs:
+            git_repos.append(root)
+
+    if git_repos:
+        info_print(f"✅ Found {len(git_repos)} Git repositories:")
+        for repo in git_repos[:3]:
+            console.print(f"   - {os.path.basename(repo)}")
+    else:
+        console.print("⚠️  No Git repositories found")
+
+    # Test file creation in a temp directory
+    test_dir = os.path.join(MONITOR_PATH, "activity_monitor_test")
+    try:
+        os.makedirs(test_dir, exist_ok=True)
+        test_file = os.path.join(test_dir, "test.txt")
+
+        info_print("Testing file change detection...")
+        console.print("Creating a test file to verify monitoring works...")
+
+        with open(test_file, "w") as f:
+            f.write("This is a test file for Activity Monitor\n")
+
+        info_print(f"✅ Test file created: {test_file}")
+        console.print(
+            "If monitoring is working, you should see file change notifications"
+        )
+        console.print("Try editing a file in one of your Git repositories")
+
+        # Clean up
+        os.remove(test_file)
+        os.rmdir(test_dir)
+
+    except Exception as e:
+        error_print(f"Test failed: {e}")
+
+
 # Main CLI
 def main():
     """Main CLI interface."""
@@ -911,9 +1076,15 @@ Examples:
 
     # Start command
     start_parser = subparsers.add_parser("start", help="Start activity monitoring")
+    start_parser.add_argument(
+        "--verbose", "-v", action="store_true", help="Enable verbose output"
+    )
 
     # Status command
     status_parser = subparsers.add_parser("status", help="Show current status")
+
+    # Test command
+    test_parser = subparsers.add_parser("test", help="Test file monitoring setup")
 
     # Summary command
     summary_parser = subparsers.add_parser(
@@ -938,18 +1109,25 @@ Examples:
         "--days", type=int, default=30, help="Number of days to export"
     )
 
+    # Test command
+    test_parser = subparsers.add_parser("test", help="Test file monitoring")
+
     args = parser.parse_args()
 
     if args.command == "start":
-        cmd_start()
+        cmd_start(args.verbose)
     elif args.command == "status":
         cmd_status()
+    elif args.command == "test":
+        cmd_test()
     elif args.command == "summary":
         cmd_summary(args.period)
     elif args.command == "report":
         cmd_report(args.days)
     elif args.command == "export":
         cmd_export(args.format, args.days)
+    elif args.command == "test":
+        cmd_test()
     else:
         parser.print_help()
 
