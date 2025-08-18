@@ -2,3 +2,22 @@ log_dir: /Users/vymn/Desktop/notes/time_log
 idle_threshold: 300
 scan_interval: 3
 monitor_path: /Users/vymn/developement
+
+# Markdown logging settings
+markdown:
+  enabled: true
+  daily_logs: true
+  summary_reports: true
+  include_file_lists: true
+  include_git_stats: true
+
+# Database settings
+database:
+  backup_interval: 86400 # 24 hours
+  max_backups: 7
+
+# Productivity settings
+productivity:
+  minimum_session_time: 60
+  file_change_weight: 5
+  line_change_weight: 0.1

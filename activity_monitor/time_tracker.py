@@ -174,7 +174,9 @@ def check_commits():
 
         if repo_path not in last_commits:
             last_commits[repo_path] = commit_hash
-            print_debug(f"Initialized commit tracking for {os.path.basename(repo_path)}")
+            print_debug(
+                f"Initialized commit tracking for {os.path.basename(repo_path)}"
+            )
             continue
 
         if commit_hash != last_commits[repo_path]:
@@ -219,20 +221,30 @@ def monitor():
             check_commits()
             status_counter += 1
             if status_counter >= 20:
-                print_status(f"Active sessions: {len([k for k, (s, l) in active_sessions.items() if s])}")
-                print_status(f"Accumulated time: {len([k for k, v in accumulated_time.items() if v > 0])}")
+                print_status(
+                    f"Active sessions: {len([k for k, (s, l) in active_sessions.items() if s])}"
+                )
+                print_status(
+                    f"Accumulated time: {len([k for k, v in accumulated_time.items() if v > 0])}"
+                )
                 for repo, time_val in accumulated_time.items():
                     if time_val > 0:
-                        console.print(f"  - [bold]{os.path.basename(repo)}[/bold]: [yellow]{round(time_val/60, 2)} min[/yellow]")
+                        console.print(
+                            f"  - [bold]{os.path.basename(repo)}[/bold]: [yellow]{round(time_val/60, 2)} min[/yellow]"
+                        )
                 status_counter = 0
     except KeyboardInterrupt:
         observer.stop()
     observer.join()
 
+
 # CLI interface
 
+
 def main():
-    parser = argparse.ArgumentParser(description="Activity Monitor - Track time spent in git repos.")
+    parser = argparse.ArgumentParser(
+        description="Activity Monitor - Track time spent in git repos."
+    )
     subparsers = parser.add_subparsers(dest="command")
 
     start_parser = subparsers.add_parser("start", help="Start monitoring activity.")
@@ -244,15 +256,22 @@ def main():
     if args.command == "start":
         monitor()
     elif args.command == "status":
-        print_status(f"Active sessions: {len([k for k, (s, l) in active_sessions.items() if s])}")
-        print_status(f"Accumulated time: {len([k for k, v in accumulated_time.items() if v > 0])}")
+        print_status(
+            f"Active sessions: {len([k for k, (s, l) in active_sessions.items() if s])}"
+        )
+        print_status(
+            f"Accumulated time: {len([k for k, v in accumulated_time.items() if v > 0])}"
+        )
         for repo, time_val in accumulated_time.items():
             if time_val > 0:
-                console.print(f"  - [bold]{os.path.basename(repo)}[/bold]: [yellow]{round(time_val/60, 2)} min[/yellow]")
+                console.print(
+                    f"  - [bold]{os.path.basename(repo)}[/bold]: [yellow]{round(time_val/60, 2)} min[/yellow]"
+                )
     elif args.command == "stop":
         print_status("To stop monitoring, press Ctrl+C in the running process.")
     else:
         parser.print_help()
+
 
 if __name__ == "__main__":
     main()
