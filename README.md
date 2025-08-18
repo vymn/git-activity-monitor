@@ -1,20 +1,62 @@
-# Activity Monitor
+# Enhanced Activity Monitor
 
-A Python tool to automatically track time spent working in Git repositories and log commit activity. Useful for developers who want to monitor their coding sessions and generate daily logs.
+A powerful Python tool to automatically track coding productivity, analyze work patterns, and generate insightful reports from your Git repositories.
 
-## Features
+## 🌟 Features
 
-- Tracks active coding sessions in Git repositories
-- Detects file changes and new commits
-- Logs time spent per commit in Markdown files
-- Configurable idle threshold and scan interval
+### Core Monitoring
+- **Real-time Activity Tracking**: Monitor file changes across multiple Git repositories
+- **Smart Session Detection**: Automatically detect work sessions and idle periods  
+- **Git Integration**: Track commits, branches, and code statistics
+- **Database Storage**: SQLite database for persistent data storage
 
-## Usage
+### Analytics & Insights
+- **Productivity Scoring**: Calculate productivity metrics based on time, files, and lines changed
+- **Daily/Weekly Reports**: Detailed analytics with charts and visualizations
+- **Goal Tracking**: Set and monitor coding goals (daily hours, weekly commits, etc.)
+- **Trend Analysis**: Track productivity trends over time
 
-1. Install dependencies: `pip install -r requirements.txt`
-2. Run the tracker: `python main.py`
+### Rich CLI Interface
+- **Colored Output**: Beautiful terminal interface with Rich library
+- **Live Status**: Real-time monitoring dashboard
+- **Multiple Commands**: start, status, report, export commands
+- **Progress Tracking**: Visual progress bars and status updates
 
-## Configuration
+## 🚀 Installation
+
+1. **Setup Script**:
+   ```bash
+   chmod +x setup.sh && ./setup.sh
+   ```
+
+2. **Manual Installation**:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+## 📊 Usage
+
+### Start Monitoring
+```bash
+python main.py start
+```
+
+### Check Status  
+```bash
+python main.py status
+```
+
+### Generate Reports
+```bash
+python main.py report --days 30
+```
+
+### Export Data
+```bash
+python main.py export --format csv
+```
+
+## ⚙️ Configuration
 
 - Edit `config.yaml` to change log directory, idle threshold, and scan interval.
 

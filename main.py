@@ -1,4 +1,4 @@
-from activity_monitor.time_tracker import monitor
+from activity_monitor.enhanced_tracker import main
 
 if __name__ == "__main__":
-    monitor()
+    main()
