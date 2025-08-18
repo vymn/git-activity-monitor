@@ -36,11 +36,10 @@ import psutil
 import threading
 import signal
 import sys
+from .config import load_config
 
-# Load config
-CONFIG_PATH = os.path.join(os.path.dirname(__file__), "..", "config.yaml")
-with open(CONFIG_PATH, "r") as f:
-    config = yaml.safe_load(f)
+# Load config using the config module
+config = load_config()
 
 IDLE_THRESHOLD = config.get("idle_threshold", 300)
 SCAN_INTERVAL = config.get("scan_interval", 3)
@@ -369,6 +368,7 @@ class EnhancedActivityTracker:
     def _check_commits(self):
         """Check for new commits and save completed sessions."""
         all_repos = set(self.active_sessions.keys()) | set(self.accumulated_time.keys())
+        verbose_print(f"Checking commits in {len(all_repos)} repositories")
 
         for repo_path in all_repos:
             try:
@@ -379,20 +379,32 @@ class EnhancedActivityTracker:
                     .decode()
                     .strip()
                 )
-            except subprocess.CalledProcessError:
+                verbose_print(
+                    f"Current commit in {os.path.basename(repo_path)}: {commit_hash[:7]}"
+                )
+            except subprocess.CalledProcessError as e:
+                verbose_print(f"Failed to get commit hash for {repo_path}: {e}")
                 continue
 
             if repo_path not in self.last_commits:
                 self.last_commits[repo_path] = commit_hash
+                debug_print(
+                    f"Initialized commit tracking for {os.path.basename(repo_path)}"
+                )
                 continue
 
             if commit_hash != self.last_commits[repo_path]:
-                # New commit detected
+                info_print(f"🔄 New commit detected in {os.path.basename(repo_path)}")
+                verbose_print(f"Old commit: {self.last_commits[repo_path][:7]}")
+                verbose_print(f"New commit: {commit_hash[:7]}")
                 self._handle_new_commit(repo_path, commit_hash)
+            else:
+                verbose_print(f"No new commits in {os.path.basename(repo_path)}")
 
     def _handle_new_commit(self, repo_path, commit_hash):
         """Handle a new commit by saving the session."""
         repo_name = os.path.basename(repo_path)
+        verbose_print(f"Processing new commit in {repo_name}")
 
         # Add current active session to accumulated time
         start, last = self.active_sessions.get(repo_path, (None, None))
@@ -402,14 +414,26 @@ class EnhancedActivityTracker:
                 self.accumulated_time.get(repo_path, 0) + session_duration
             )
             self.active_sessions[repo_path] = (None, None)
+            debug_print(
+                f"Added active session to accumulated: {session_duration/60:.1f}min"
+            )
 
         total_duration = self.accumulated_time.get(repo_path, 0)
+        verbose_print(
+            f"Total accumulated time for {repo_name}: {total_duration/60:.1f}min"
+        )
 
         if total_duration > 0:
             # Get commit info and git stats
             commit_message = self._get_commit_message(repo_path)
             files_changed = self.file_changes.get(repo_path, 0)
             lines_added, lines_deleted = self.get_git_stats(repo_path)
+
+            verbose_print(f"Commit details:")
+            verbose_print(f"  - Hash: {commit_hash[:7]}")
+            verbose_print(f"  - Message: {commit_message[:50]}...")
+            verbose_print(f"  - Files changed: {files_changed}")
+            verbose_print(f"  - Lines added: {lines_added}, deleted: {lines_deleted}")
 
             # Calculate productivity score
             productivity_score = self.calculate_productivity_score(
@@ -431,12 +455,20 @@ class EnhancedActivityTracker:
                 productivity_score,
             )
 
-            self.db.save_session(session_data)
+            try:
+                self.db.save_session(session_data)
+                verbose_print("✅ Session saved to database")
+            except Exception as e:
+                error_print(f"Failed to save session to database: {e}")
 
             # Save session to Markdown log
-            self.save_session_to_markdown(
-                repo_path, total_duration, (commit_hash, commit_message)
-            )
+            try:
+                self.save_session_to_markdown(
+                    repo_path, total_duration, (commit_hash, commit_message)
+                )
+                verbose_print("✅ Session saved to Markdown")
+            except Exception as e:
+                error_print(f"Failed to save session to Markdown: {e}")
 
             # Show commit notification
             console.print(
@@ -453,21 +485,27 @@ class EnhancedActivityTracker:
             # Reset counters
             self.accumulated_time[repo_path] = 0
             self.file_changes[repo_path] = 0
+        else:
+            verbose_print("No accumulated time found - session not saved")
 
         self.last_commits[repo_path] = commit_hash
 
     def _get_commit_message(self, repo_path):
         """Get the latest commit message."""
         try:
-            return (
-                subprocess.check_output(
-                    ["git", "-C", repo_path, "log", "-1", "--pretty=%B"]
-                )
-                .decode()
-                .strip()
+            result = subprocess.check_output(
+                ["git", "-C", repo_path, "log", "-1", "--pretty=%B"],
+                stderr=subprocess.DEVNULL,
             )
-        except:
-            return "No commit message"
+            message = result.decode().strip()
+            verbose_print(f"Retrieved commit message: {message[:50]}...")
+            return message
+        except subprocess.CalledProcessError as e:
+            verbose_print(f"Failed to get commit message: {e}")
+            return "No commit message available"
+        except Exception as e:
+            verbose_print(f"Unexpected error getting commit message: {e}")
+            return "Error retrieving commit message"
 
     def _show_live_status(self):
         """Show live status of active sessions."""
@@ -984,7 +1022,56 @@ def cmd_start(verbose=False):
 
 def cmd_status():
     """Show current status and recent activity."""
+    info_print("📊 Activity Monitor Status")
+
     analytics = Analytics()
+
+    # Show recent sessions from database
+    try:
+        db = DatabaseManager()
+        recent_sessions = db.get_sessions(1)  # Last 1 day
+
+        if not recent_sessions.empty:
+            info_print(f"Found {len(recent_sessions)} recent sessions")
+
+            # Show recent commits table
+            table = Table(title="🔄 Recent Activity")
+            table.add_column("Time", style="cyan")
+            table.add_column("Repository", style="green")
+            table.add_column("Duration", style="yellow")
+            table.add_column("Commit Message", style="blue")
+            table.add_column("Productivity", style="magenta")
+
+            for _, session in recent_sessions.head(10).iterrows():
+                duration = f"{session['duration_seconds']/60:.1f}min"
+                commit_msg = (
+                    session["commit_message"][:40] + "..."
+                    if len(str(session["commit_message"])) > 40
+                    else str(session["commit_message"])
+                )
+                productivity = f"{session['productivity_score']:.1f}/100"
+                created_time = pd.to_datetime(session["created_at"]).strftime("%H:%M")
+
+                table.add_row(
+                    created_time,
+                    session["repo_name"],
+                    duration,
+                    commit_msg,
+                    productivity,
+                )
+
+            console.print(table)
+        else:
+            console.print("[yellow]⚠️  No recent activity found[/yellow]")
+            console.print("Make sure to:")
+            console.print("1. Start the monitor: python main.py start -v")
+            console.print("2. Edit files in your Git repositories")
+            console.print("3. Make commits to save sessions")
+
+    except Exception as e:
+        error_print(f"Error retrieving status: {e}")
+
+    # Show daily report
     analytics.generate_daily_report(7)
 
 
@@ -1057,6 +1144,54 @@ def cmd_test():
         error_print(f"Test failed: {e}")
 
 
+def cmd_debug():
+    """Debug command to check system status."""
+    info_print("🔧 Debug Information")
+
+    # Check database
+    try:
+        db = DatabaseManager()
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM activity_sessions")
+        session_count = cursor.fetchone()[0]
+        conn.close()
+        info_print(f"✅ Database sessions: {session_count}")
+    except Exception as e:
+        error_print(f"Database error: {e}")
+
+    # Check config
+    info_print(f"📁 Monitor path: {MONITOR_PATH}")
+    info_print(f"💾 Log directory: {LOG_DIR}")
+    info_print(f"⏱️  Idle threshold: {IDLE_THRESHOLD}s")
+
+    # Check git repos
+    git_repos = []
+    if os.path.exists(MONITOR_PATH):
+        for root, dirs, files in os.walk(MONITOR_PATH):
+            if ".git" in dirs:
+                git_repos.append(root)
+
+    info_print(f"📦 Git repositories found: {len(git_repos)}")
+    for repo in git_repos[:3]:
+        console.print(f"   - {os.path.basename(repo)}")
+
+    # Check recent database entries
+    try:
+        db = DatabaseManager()
+        recent = db.get_sessions(1)
+        if not recent.empty:
+            info_print(f"📊 Recent sessions: {len(recent)}")
+            for _, row in recent.head(3).iterrows():
+                console.print(
+                    f"   - {row['repo_name']}: {row['commit_message'][:40]}..."
+                )
+        else:
+            console.print("⚠️  No recent sessions in database")
+    except Exception as e:
+        error_print(f"Error checking recent sessions: {e}")
+
+
 # Main CLI
 def main():
     """Main CLI interface."""
@@ -1080,11 +1215,14 @@ Examples:
         "--verbose", "-v", action="store_true", help="Enable verbose output"
     )
 
+    # Test command
+    test_parser = subparsers.add_parser("test", help="Test file monitoring setup")
+
     # Status command
     status_parser = subparsers.add_parser("status", help="Show current status")
 
-    # Test command
-    test_parser = subparsers.add_parser("test", help="Test file monitoring setup")
+    # Debug command
+    debug_parser = subparsers.add_parser("debug", help="Show debug information")
 
     # Summary command
     summary_parser = subparsers.add_parser(
@@ -1109,9 +1247,6 @@ Examples:
         "--days", type=int, default=30, help="Number of days to export"
     )
 
-    # Test command
-    test_parser = subparsers.add_parser("test", help="Test file monitoring")
-
     args = parser.parse_args()
 
     if args.command == "start":
@@ -1120,14 +1255,16 @@ Examples:
         cmd_status()
     elif args.command == "test":
         cmd_test()
+    elif args.command == "debug":
+        cmd_debug()
     elif args.command == "summary":
         cmd_summary(args.period)
     elif args.command == "report":
         cmd_report(args.days)
     elif args.command == "export":
         cmd_export(args.format, args.days)
-    elif args.command == "test":
-        cmd_test()
+    elif args.command == "debug":
+        cmd_debug()
     else:
         parser.print_help()
 

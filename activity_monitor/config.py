@@ -34,8 +34,8 @@ def load_config():
             with open(config_path) as f:
                 user_config = yaml.safe_load(f)
 
-
             # Merge with defaults
+            
             config = DEFAULT_CONFIG.copy()
             config.update(user_config)
             return config
