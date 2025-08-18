@@ -1,0 +1,4 @@
+log_dir: /Users/vymn/Desktop/notes/time_log
+idle_threshold: 300
+scan_interval: 3
+monitor_path: /Users/vymn/developement
