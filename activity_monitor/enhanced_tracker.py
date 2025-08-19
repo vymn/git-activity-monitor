@@ -45,7 +45,7 @@ IDLE_THRESHOLD = config.get("idle_threshold", 300)
 SCAN_INTERVAL = config.get("scan_interval", 3)
 LOG_DIR = os.path.expanduser(config.get("log_dir", "~/Desktop/notes/time_log"))
 MONITOR_PATH = os.path.expanduser(config.get("monitor_path", "~/developement"))
-DB_PATH = os.path.join(LOG_DIR, "activity_monitor.db")
+DB_PATH = os.path.join(LOG_DIR, "activity_monitor_test.db")
 
 console = Console()
 VERBOSE = False  # Global verbose flag
