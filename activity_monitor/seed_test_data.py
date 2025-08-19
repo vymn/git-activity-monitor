@@ -53,7 +53,7 @@ def seed_test_database():
 
     # Seed activity_sessions with random data spread across 30 days
     now = datetime.now()
-    for i in range(150):  # Generate 150 sessions (5 per day average)
+    for _ in range(150):  # Generate 150 sessions (5 per day average)
         # Pick a random day in the last 30 days
         days_ago = random.randint(0, 29)
         session_date = now - timedelta(days=days_ago)
@@ -73,7 +73,31 @@ def seed_test_database():
         repo_name = f"repo_{random.randint(1, 5)}"
         repo_path = f"/path/to/{repo_name}"
         commit_hash = f"{random.randint(1000000, 9999999):x}"
-        commit_message = f"Commit message {i}: {['Fix bug', 'Add feature', 'Refactor code', 'Update docs', 'Optimize performance'][random.randint(0, 4)]}"
+
+        # More realistic commit messages with task names
+        task_types = [
+            "feat: Add user authentication system",
+            "fix: Resolve database connection timeout issue",
+            "PROJ-123: Implement payment gateway integration",
+            "bug: Fix memory leak in image processing",
+            "chore: Update dependencies to latest versions",
+            "docs: Add API documentation for user endpoints",
+            "refactor: Optimize database query performance",
+            "test: Add unit tests for user service",
+            "[FEAT-456] Create responsive dashboard layout",
+            "Update login form validation rules",
+            "Implement real-time chat functionality",
+            "Fix bug in file upload component",
+            "Add dark mode theme support",
+            "Optimize image compression algorithm",
+            "Create user profile management page",
+            "Fix responsive design on mobile devices",
+            "Implement search functionality",
+            "Update API error handling",
+            "Add email notification system",
+            "Refactor authentication middleware",
+        ]
+        commit_message = random.choice(task_types)
         files_changed = random.randint(1, 15)
         lines_added = random.randint(5, 300)
         lines_deleted = random.randint(0, 150)

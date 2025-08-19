@@ -560,28 +560,27 @@ class EnhancedActivityTracker:
         # Create daily file if it doesn't exist
         if not os.path.exists(today_file):
             with open(today_file, "w") as f:
-                f.write(f"# Git Activity Log - {datetime.now().date()}\n\n")
-                f.write("## Daily Summary\n\n")
+                f.write(f"# Daily Timesheet - {datetime.now().date()}\n\n")
+                f.write("## 📋 Task Summary\n\n")
                 f.write(
-                    "| Time | Repository | Duration | Files | Lines | Productivity | Commit |\n"
+                    "| Time | Task/Project | Repository | Duration | Files | Lines | Productivity | Status |\n"
                 )
                 f.write(
-                    "|------|------------|----------|-------|-------|--------------|--------|\n\n"
+                    "|------|-------------|------------|----------|-------|-------|--------------|--------|\n\n"
                 )
 
-        # Read existing content to check for repo section
+        # Read existing content to check for task sections
         with open(today_file, "r") as f:
             content = f.read()
-
-        # Add repository section if it doesn't exist
-        if f"## {repo_name}" not in content:
-            with open(today_file, "a") as f:
-                f.write(f"\n## {repo_name}\n\n")
 
         # Get session details
         commit_hash, commit_message = (
             commit_info if commit_info else (None, "Work in progress")
         )
+
+        # Extract task name from commit message
+        task_name = extract_task_name(commit_message)
+
         files_changed = self.file_changes.get(repo_path, 0)
         lines_added, lines_deleted = self.get_git_stats(repo_path)
         total_lines = lines_added + lines_deleted
@@ -592,9 +591,10 @@ class EnhancedActivityTracker:
         now = datetime.now()
         time_str = now.strftime("%H:%M")
         duration_str = f"{duration/60:.1f}min"
+        status = "Committed" if commit_hash else "In Progress"
 
         # Add to summary table (insert after the table header)
-        summary_line = f"| {time_str} | {repo_name} | {duration_str} | {files_changed} | {total_lines} | {productivity_score:.1f}/100 | {commit_hash[:7] if commit_hash else 'WIP'} |\n"
+        summary_line = f"| {time_str} | {task_name} | {repo_name} | {duration_str} | {files_changed} | {total_lines} | {productivity_score:.1f}/100 | {status} |\n"
 
         # Insert summary line after table header
         lines = content.split("\n")
@@ -609,19 +609,33 @@ class EnhancedActivityTracker:
             with open(today_file, "w") as f:
                 f.write("\n".join(lines))
 
-        # Add detailed entry to repository section
-        with open(today_file, "a") as f:
-            f.write(f"### {now.strftime('%H:%M')} - {duration_str}\n\n")
-            if commit_hash:
-                f.write(f"**Commit:** `{commit_hash[:7]}` - {commit_message}\n\n")
-            else:
-                f.write(f"**Work Session:** {commit_message}\n\n")
+        # Add task section if it doesn't exist
+        if f"## {task_name}" not in content:
+            with open(today_file, "a") as f:
+                f.write(f"\n## 📝 {task_name}\n\n")
+                f.write(f"**Repository:** {repo_name}  \n")
+                f.write(f"**Total Time:** {duration_str}  \n")
+                f.write(f"**Status:** {status}  \n\n")
 
-            f.write(f"- **Duration:** {duration_str}\n")
-            f.write(f"- **Files changed:** {files_changed}\n")
-            f.write(f"- **Lines added:** {lines_added}\n")
-            f.write(f"- **Lines deleted:** {lines_deleted}\n")
-            f.write(f"- **Productivity score:** {productivity_score:.1f}/100\n\n")
+        # Add detailed entry to task section
+        with open(today_file, "a") as f:
+            f.write(f"### {now.strftime('%H:%M')} - Work Session ({duration_str})\n\n")
+
+            # Task details box
+            f.write(f"**📋 Task:** {task_name}  \n")
+            f.write(f"**📁 Repository:** {repo_name}  \n")
+
+            if commit_hash:
+                f.write(f"**🔄 Commit:** `{commit_hash[:7]}` - {commit_message}  \n")
+            else:
+                f.write(f"**💼 Work:** {commit_message}  \n")
+
+            f.write(f"**⏱️ Duration:** {duration_str}  \n")
+            f.write(f"**📊 Productivity:** {productivity_score:.1f}/100  \n")
+            f.write(f"**📁 Files changed:** {files_changed}  \n")
+            f.write(f"**➕ Lines added:** {lines_added}  \n")
+            f.write(f"**➖ Lines deleted:** {lines_deleted}  \n")
+            f.write(f"**✅ Status:** {status}  \n\n")
 
             if files_changed > 0:
                 # Try to get list of changed files
@@ -888,6 +902,68 @@ def get_repo_root(path):
         return repo_root
     except subprocess.CalledProcessError:
         return None
+
+
+def extract_task_name(commit_message):
+    """Extract task name from commit message."""
+    if not commit_message:
+        return "Unknown Task"
+
+    # Common task patterns to look for
+    patterns = [
+        # JIRA-style: ABC-123, PROJ-456 (keep the full identifier)
+        r"([A-Z]+-\d+)(?::\s*(.+))?",
+        # GitHub issues: #123, fixes #456, closes #789 (with description)
+        r"(?:fix(?:es)?|close(?:s)?|resolve(?:s)?)?\s*#(\d+)(?::\s*(.+))?",
+        # Square brackets: [TASK-123], [Feature], [Bug Fix]
+        r"\[([^\]]+)\](?::\s*(.+))?",
+        # Feature/bug prefixes: feat: something, fix: something, bug: something
+        r"(?:feat(?:ure)?|fix|bug|chore|docs?|refactor|style|test):\s*([^,\n]+)",
+        # Common verbs at start: Add, Fix, Update, Implement, etc.
+        r"^((?:Add|Fix|Update|Implement|Create|Remove|Delete|Refactor|Optimize|Improve)[^,\n]*)",
+    ]
+
+    import re
+
+    for pattern in patterns:
+        match = re.search(pattern, commit_message, re.IGNORECASE)
+        if match:
+            groups = match.groups()
+
+            # For JIRA-style, GitHub issues, or bracketed items
+            if len(groups) >= 2 and groups[1]:
+                # Use the description part if available
+                task = groups[1].strip()
+            elif groups[0]:
+                # Use the first group (ID or main content)
+                task = groups[0].strip()
+            else:
+                continue
+
+            # Clean up the task name
+            task = task.replace("_", " ").replace("-", " ")
+            # Capitalize first letter of each word, but preserve acronyms
+            words = task.split()
+            cleaned_words = []
+            for word in words:
+                if word.isupper() and len(word) > 1:
+                    cleaned_words.append(word)  # Keep acronyms as-is
+                elif len(word) == 1:
+                    cleaned_words.append(word.upper())  # Single letters uppercase
+                else:
+                    cleaned_words.append(word.capitalize())
+
+            task = " ".join(cleaned_words)
+            return task[:60]  # Increased length limit
+
+    # Fallback: use first few words of commit message
+    words = commit_message.split()
+    if len(words) >= 3:
+        return " ".join(words[:3]).strip(".,!?:").title()
+    elif len(words) >= 1:
+        return words[0].capitalize()
+
+    return "General Work"
 
 
 # Analytics and Visualization Functions
