@@ -36,6 +36,33 @@ import psutil
 import threading
 import signal
 import sys
+
+# Optional PDF dependencies - import with error handling
+PDF_AVAILABLE = False
+try:
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import letter, A4
+    from reportlab.platypus import (
+        SimpleDocTemplate,
+        Table as RLTable,
+        TableStyle,
+        Paragraph,
+        Spacer,
+        Image,
+        PageBreak,
+    )
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import inch
+    from reportlab.graphics.shapes import Drawing
+    from reportlab.graphics.charts.barcharts import VerticalBarChart
+    from reportlab.graphics.charts.linecharts import HorizontalLineChart
+    from reportlab.graphics.charts.piecharts import Pie
+    from reportlab.lib.colors import HexColor
+
+    PDF_AVAILABLE = True
+except ImportError:
+    pass  # PDF functionality will be disabled
+
 from .config import load_config
 
 # Load config using the config module
@@ -1122,12 +1149,327 @@ class Analytics:
 
         console.print(f"[green]📄 Data exported to: {filepath}[/green]")
 
+    def generate_pdf_report(self, days=30, report_type="comprehensive"):
+        """Generate a comprehensive PDF report."""
+        if not PDF_AVAILABLE:
+            console.print("[red]❌ PDF libraries not available. Install with:[/red]")
+            console.print("pip install reportlab Pillow kaleido")
+            return None
+
+        return PDFReportGenerator(self.db).generate_report(days, report_type)
+
+
+class PDFReportGenerator:
+    """Generate PDF reports from activity data."""
+
+    def __init__(self, db_manager):
+        self.db = db_manager
+
+    def generate_report(self, days=30, report_type="comprehensive"):
+        """Generate PDF report with charts and tables."""
+        # Get data
+        df = self.db.get_daily_stats(days)
+        sessions_df = self.db.get_sessions(days)
+
+        if df.empty:
+            console.print("[yellow]No data available for PDF report[/yellow]")
+            return None
+
+        # Create filename with timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"activity_{report_type}_report_{timestamp}.pdf"
+        pdf_path = os.path.join(LOG_DIR, filename)
+
+        # Create PDF document
+        doc = SimpleDocTemplate(pdf_path, pagesize=letter)
+        story = []
+        styles = getSampleStyleSheet()
+
+        # Add content
+        self._add_title_and_summary(story, styles, df, sessions_df, days)
+        self._add_daily_breakdown(story, styles, df)
+
+        if report_type == "comprehensive" and not sessions_df.empty:
+            self._add_repository_analysis(story, styles, sessions_df)
+
+        self._add_productivity_insights(story, styles, df, sessions_df)
+        self._add_footer(story, styles)
+
+        # Build PDF
+        try:
+            doc.build(story)
+            console.print(f"[green]📄 PDF report generated: {pdf_path}[/green]")
+            return pdf_path
+        except Exception as e:
+            error_print(f"Error generating PDF: {e}")
+            return None
+
+    def _add_title_and_summary(self, story, styles, df, sessions_df, days):
+        """Add title and executive summary."""
+        # Custom styles
+        title_style = ParagraphStyle(
+            "CustomTitle",
+            parent=styles["Heading1"],
+            fontSize=24,
+            spaceAfter=30,
+            textColor=HexColor("#2E86C1"),
+        )
+
+        # Title
+        story.append(Paragraph("📊 Activity Monitor Report", title_style))
+        story.append(
+            Paragraph(
+                f"Report Period: {days} days (Generated: {datetime.now().strftime('%B %d, %Y')})",
+                styles["Normal"],
+            )
+        )
+        story.append(Spacer(1, 20))
+
+        # Executive Summary
+        heading_style = ParagraphStyle(
+            "CustomHeading",
+            parent=styles["Heading2"],
+            fontSize=16,
+            spaceBefore=20,
+            spaceAfter=10,
+            textColor=HexColor("#1B4F72"),
+        )
+
+        story.append(Paragraph("📋 Executive Summary", heading_style))
+
+        # Calculate metrics
+        total_hours = df["total_time"].sum() / 3600
+        total_sessions = df["sessions_count"].sum()
+        total_repos = (
+            len(sessions_df["repo_name"].unique()) if not sessions_df.empty else 0
+        )
+        avg_productivity = df["avg_productivity"].mean()
+        total_files = df["files_changed"].sum()
+        total_lines = df["lines_changed"].sum()
+
+        # Create summary table
+        summary_data = [
+            ["Metric", "Value"],
+            ["Total Coding Time", f"{total_hours:.1f} hours"],
+            ["Total Sessions", f"{total_sessions}"],
+            ["Repositories Worked On", f"{total_repos}"],
+            ["Average Productivity Score", f"{avg_productivity:.1f}/100"],
+            ["Files Modified", f"{total_files}"],
+            ["Lines Changed", f"{total_lines}"],
+            ["Average Daily Time", f"{total_hours/len(df):.1f} hours"],
+        ]
+
+        summary_table = RLTable(summary_data)
+        summary_table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), HexColor("#3498DB")),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+                    ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                    ("FONTSIZE", (0, 0), (-1, 0), 12),
+                    ("BOTTOMPADDING", (0, 0), (-1, 0), 12),
+                    ("BACKGROUND", (0, 1), (-1, -1), HexColor("#F8F9FA")),
+                    ("GRID", (0, 0), (-1, -1), 1, colors.black),
+                ]
+            )
+        )
+
+        story.append(summary_table)
+        story.append(Spacer(1, 20))
+
+    def _add_daily_breakdown(self, story, styles, df):
+        """Add daily activity breakdown table."""
+        heading_style = ParagraphStyle(
+            "CustomHeading",
+            parent=styles["Heading2"],
+            fontSize=16,
+            spaceBefore=20,
+            spaceAfter=10,
+            textColor=HexColor("#1B4F72"),
+        )
+
+        story.append(Paragraph("📅 Daily Activity Breakdown", heading_style))
+
+        daily_data = [
+            ["Date", "Hours", "Sessions", "Repos", "Productivity", "Files", "Lines"]
+        ]
+        for _, row in df.iterrows():
+            daily_data.append(
+                [
+                    str(row["date"]),
+                    f"{row['total_time']/3600:.1f}h",
+                    str(row["sessions_count"]),
+                    str(row["repos_count"]),
+                    f"{row['avg_productivity']:.1f}/100",
+                    str(row["files_changed"]),
+                    str(row["lines_changed"]),
+                ]
+            )
+
+        daily_table = RLTable(daily_data)
+        daily_table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), HexColor("#E74C3C")),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+                    ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                    ("FONTSIZE", (0, 0), (-1, 0), 10),
+                    ("FONTSIZE", (0, 1), (-1, -1), 8),
+                    ("BOTTOMPADDING", (0, 0), (-1, 0), 12),
+                    ("BACKGROUND", (0, 1), (-1, -1), HexColor("#FDEDEC")),
+                    ("GRID", (0, 0), (-1, -1), 1, colors.black),
+                ]
+            )
+        )
+
+        story.append(daily_table)
+        story.append(Spacer(1, 20))
+
+    def _add_repository_analysis(self, story, styles, sessions_df):
+        """Add repository analysis section."""
+        heading_style = ParagraphStyle(
+            "CustomHeading",
+            parent=styles["Heading2"],
+            fontSize=16,
+            spaceBefore=20,
+            spaceAfter=10,
+            textColor=HexColor("#1B4F72"),
+        )
+
+        story.append(Paragraph("📦 Repository Analysis", heading_style))
+
+        repo_stats = (
+            sessions_df.groupby("repo_name")
+            .agg(
+                {
+                    "duration_seconds": "sum",
+                    "id": "count",
+                    "productivity_score": "mean",
+                    "files_changed": "sum",
+                    "lines_added": "sum",
+                    "lines_deleted": "sum",
+                }
+            )
+            .round(2)
+        )
+
+        repo_stats["hours"] = repo_stats["duration_seconds"] / 3600
+        repo_stats = repo_stats.sort_values("hours", ascending=False)
+
+        repo_data = [
+            [
+                "Repository",
+                "Hours",
+                "Sessions",
+                "Avg Productivity",
+                "Files",
+                "Lines Changed",
+            ]
+        ]
+        for repo, stats in repo_stats.head(10).iterrows():  # Top 10 repositories
+            total_lines = stats["lines_added"] + stats["lines_deleted"]
+            repo_data.append(
+                [
+                    repo[:20]
+                    + ("..." if len(repo) > 20 else ""),  # Truncate long names
+                    f"{stats['hours']:.1f}h",
+                    str(stats["id"]),
+                    f"{stats['productivity_score']:.1f}",
+                    str(stats["files_changed"]),
+                    str(int(total_lines)),
+                ]
+            )
+
+        repo_table = RLTable(repo_data)
+        repo_table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), HexColor("#27AE60")),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+                    ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                    ("FONTSIZE", (0, 0), (-1, 0), 10),
+                    ("FONTSIZE", (0, 1), (-1, -1), 8),
+                    ("BOTTOMPADDING", (0, 0), (-1, 0), 12),
+                    ("BACKGROUND", (0, 1), (-1, -1), HexColor("#E8F8F5")),
+                    ("GRID", (0, 0), (-1, -1), 1, colors.black),
+                ]
+            )
+        )
+
+        story.append(repo_table)
+        story.append(Spacer(1, 20))
+
+    def _add_productivity_insights(self, story, styles, df, sessions_df):
+        """Add productivity insights and recommendations."""
+        heading_style = ParagraphStyle(
+            "CustomHeading",
+            parent=styles["Heading2"],
+            fontSize=16,
+            spaceBefore=20,
+            spaceAfter=10,
+            textColor=HexColor("#1B4F72"),
+        )
+
+        story.append(Paragraph("🎯 Productivity Insights", heading_style))
+
+        insights = []
+        if len(df) > 1:
+            best_day = df.loc[df["avg_productivity"].idxmax()]
+            worst_day = df.loc[df["avg_productivity"].idxmin()]
+            most_active_day = df.loc[df["total_time"].idxmax()]
+
+            insights.extend(
+                [
+                    f"• Most productive day: {best_day['date']} ({best_day['avg_productivity']:.1f}/100)",
+                    f"• Most active day: {most_active_day['date']} ({most_active_day['total_time']/3600:.1f} hours)",
+                    f"• Room for improvement: {worst_day['date']} ({worst_day['avg_productivity']:.1f}/100)",
+                ]
+            )
+
+        # Add recommendations
+        total_hours = df["total_time"].sum() / 3600
+        avg_productivity = df["avg_productivity"].mean()
+        total_repos = (
+            len(sessions_df["repo_name"].unique()) if not sessions_df.empty else 0
+        )
+
+        if total_hours < 40:
+            insights.append(
+                "• Consider setting daily time goals to increase coding time"
+            )
+        if avg_productivity < 70:
+            insights.append(
+                "• Focus on fewer projects at a time to improve productivity"
+            )
+        if total_repos > 5:
+            insights.append(
+                "• Working on many projects can reduce overall productivity"
+            )
+
+        for insight in insights:
+            story.append(Paragraph(insight, styles["Normal"]))
+
+        story.append(Spacer(1, 20))
+
+    def _add_footer(self, story, styles):
+        """Add report footer."""
+        story.append(Spacer(1, 30))
+        story.append(Paragraph("---", styles["Normal"]))
+        story.append(
+            Paragraph(
+                f"Generated by Activity Monitor on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                styles["Normal"],
+            )
+        )
+
 
 # CLI Commands
 def cmd_start(verbose=False):
     """Start activity monitoring."""
     set_verbose(verbose)
-
     info_print("Initializing Activity Monitor...")
     verbose_print("Setting up database and tracker...")
 
@@ -1152,10 +1494,8 @@ def cmd_start(verbose=False):
 def cmd_status():
     """Show current status and recent activity."""
     info_print("📊 Activity Monitor Status")
-
     analytics = Analytics()
 
-    # Show recent sessions from database
     try:
         db = DatabaseManager()
         recent_sessions = db.get_sessions(1)  # Last 1 day
@@ -1192,16 +1532,57 @@ def cmd_status():
             console.print(table)
         else:
             console.print("[yellow]⚠️  No recent activity found[/yellow]")
-            console.print("Make sure to:")
-            console.print("1. Start the monitor: python main.py start -v")
-            console.print("2. Edit files in your Git repositories")
-            console.print("3. Make commits to save sessions")
 
     except Exception as e:
         error_print(f"Error retrieving status: {e}")
 
     # Show daily report
     analytics.generate_daily_report(7)
+
+
+def cmd_test():
+    """Test if file monitoring is working."""
+    info_print("🧪 Testing file monitoring...")
+
+    if not os.path.exists(MONITOR_PATH):
+        error_print(f"Monitor path doesn't exist: {MONITOR_PATH}")
+        return
+
+    info_print(f"✅ Monitor path exists: {MONITOR_PATH}")
+
+    # Check for git repos
+    git_repos = []
+    for root, dirs, files in os.walk(MONITOR_PATH):
+        if ".git" in dirs:
+            git_repos.append(root)
+
+    if git_repos:
+        info_print(f"✅ Found {len(git_repos)} Git repositories:")
+        for repo in git_repos[:3]:
+            console.print(f"   - {os.path.basename(repo)}")
+    else:
+        console.print("⚠️  No Git repositories found")
+
+
+def cmd_debug():
+    """Debug command to check system status."""
+    info_print("🔧 Debug Information")
+
+    # Check database
+    try:
+        db = DatabaseManager()
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM activity_sessions")
+        session_count = cursor.fetchone()[0]
+        conn.close()
+        info_print(f"✅ Database sessions: {session_count}")
+    except Exception as e:
+        error_print(f"Database error: {e}")
+
+    info_print(f"📁 Monitor path: {MONITOR_PATH}")
+    info_print(f"💾 Log directory: {LOG_DIR}")
+    info_print(f"⏱️  Idle threshold: {IDLE_THRESHOLD}s")
 
 
 def cmd_summary(period="week"):
@@ -1223,102 +1604,15 @@ def cmd_export(format="csv", days=30):
     analytics.export_data(format, days)
 
 
-def cmd_test():
-    """Test if file monitoring is working."""
-    info_print("🧪 Testing file monitoring...")
-
-    # Check if monitor path exists
-    if not os.path.exists(MONITOR_PATH):
-        error_print(f"Monitor path doesn't exist: {MONITOR_PATH}")
-        return
-
-    info_print(f"✅ Monitor path exists: {MONITOR_PATH}")
-
-    # Check for git repos
-    git_repos = []
-    for root, dirs, files in os.walk(MONITOR_PATH):
-        if ".git" in dirs:
-            git_repos.append(root)
-
-    if git_repos:
-        info_print(f"✅ Found {len(git_repos)} Git repositories:")
-        for repo in git_repos[:3]:
-            console.print(f"   - {os.path.basename(repo)}")
+def cmd_pdf(days=30, report_type="comprehensive"):
+    """Generate PDF report."""
+    analytics = Analytics()
+    pdf_path = analytics.generate_pdf_report(days, report_type)
+    if pdf_path:
+        console.print(f"[green]📄 PDF report generated successfully![/green]")
+        console.print(f"Location: {pdf_path}")
     else:
-        console.print("⚠️  No Git repositories found")
-
-    # Test file creation in a temp directory
-    test_dir = os.path.join(MONITOR_PATH, "activity_monitor_test")
-    try:
-        os.makedirs(test_dir, exist_ok=True)
-        test_file = os.path.join(test_dir, "test.txt")
-
-        info_print("Testing file change detection...")
-        console.print("Creating a test file to verify monitoring works...")
-
-        with open(test_file, "w") as f:
-            f.write("This is a test file for Activity Monitor\n")
-
-        info_print(f"✅ Test file created: {test_file}")
-        console.print(
-            "If monitoring is working, you should see file change notifications"
-        )
-        console.print("Try editing a file in one of your Git repositories")
-
-        # Clean up
-        os.remove(test_file)
-        os.rmdir(test_dir)
-
-    except Exception as e:
-        error_print(f"Test failed: {e}")
-
-
-def cmd_debug():
-    """Debug command to check system status."""
-    info_print("🔧 Debug Information")
-
-    # Check database
-    try:
-        db = DatabaseManager()
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM activity_sessions")
-        session_count = cursor.fetchone()[0]
-        conn.close()
-        info_print(f"✅ Database sessions: {session_count}")
-    except Exception as e:
-        error_print(f"Database error: {e}")
-
-    # Check config
-    info_print(f"📁 Monitor path: {MONITOR_PATH}")
-    info_print(f"💾 Log directory: {LOG_DIR}")
-    info_print(f"⏱️  Idle threshold: {IDLE_THRESHOLD}s")
-
-    # Check git repos
-    git_repos = []
-    if os.path.exists(MONITOR_PATH):
-        for root, dirs, files in os.walk(MONITOR_PATH):
-            if ".git" in dirs:
-                git_repos.append(root)
-
-    info_print(f"📦 Git repositories found: {len(git_repos)}")
-    for repo in git_repos[:3]:
-        console.print(f"   - {os.path.basename(repo)}")
-
-    # Check recent database entries
-    try:
-        db = DatabaseManager()
-        recent = db.get_sessions(1)
-        if not recent.empty:
-            info_print(f"📊 Recent sessions: {len(recent)}")
-            for _, row in recent.head(3).iterrows():
-                console.print(
-                    f"   - {row['repo_name']}: {row['commit_message'][:40]}..."
-                )
-        else:
-            console.print("⚠️  No recent sessions in database")
-    except Exception as e:
-        error_print(f"Error checking recent sessions: {e}")
+        console.print("[red]❌ Failed to generate PDF report[/red]")
 
 
 # Main CLI
@@ -1333,6 +1627,7 @@ Examples:
   %(prog)s status             Show current status
   %(prog)s report --days 30   Generate 30-day report
   %(prog)s export --format csv Export data as CSV
+  %(prog)s pdf --days 7 --type summary Generate PDF report
         """,
     )
 
@@ -1376,6 +1671,18 @@ Examples:
         "--days", type=int, default=30, help="Number of days to export"
     )
 
+    # PDF Report command
+    pdf_parser = subparsers.add_parser("pdf", help="Generate PDF report")
+    pdf_parser.add_argument(
+        "--days", type=int, default=30, help="Number of days to include in report"
+    )
+    pdf_parser.add_argument(
+        "--type",
+        choices=["summary", "comprehensive"],
+        default="comprehensive",
+        help="Type of report to generate",
+    )
+
     args = parser.parse_args()
 
     if args.command == "start":
@@ -1392,6 +1699,8 @@ Examples:
         cmd_report(args.days)
     elif args.command == "export":
         cmd_export(args.format, args.days)
+    elif args.command == "pdf":
+        cmd_pdf(args.days, args.type)
     elif args.command == "debug":
         cmd_debug()
     else:
