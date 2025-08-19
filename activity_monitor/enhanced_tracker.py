@@ -215,7 +215,7 @@ class EnhancedActivityTracker:
         self.active_sessions = {}
         self.accumulated_time = {}
         self.last_commits = {}
-        self.file_changes = {}
+        self.file_changes = {}  # Will store sets of changed file paths
         self.running = False
         self.observer = None
 
@@ -236,32 +236,76 @@ class EnhancedActivityTracker:
         return base_score + file_score + lines_score
 
     def get_git_stats(self, repo_path):
-        """Get detailed git statistics."""
+        """Get detailed git statistics from both staged and unstaged changes."""
         try:
-            # Get lines added/deleted from unstaged changes
-            result = subprocess.run(
-                ["git", "-C", repo_path, "diff", "--stat"],
-                capture_output=True,
-                text=True,
-            )
-
             lines_added = lines_deleted = 0
-            if result.returncode == 0:
-                for line in result.stdout.split("\n"):
-                    if "insertion" in line:
-                        try:
-                            lines_added = int(line.split()[3])
-                        except:
-                            pass
-                    if "deletion" in line:
-                        try:
-                            lines_deleted = int(line.split()[5])
-                        except:
-                            pass
+            files_changed = 0
 
-            return lines_added, lines_deleted
-        except:
-            return 0, 0
+            # Get stats from both unstaged and staged changes
+            for cmd_name, cmd in [
+                ("unstaged", ["git", "-C", repo_path, "diff", "--stat"]),
+                ("staged", ["git", "-C", repo_path, "diff", "--cached", "--stat"]),
+            ]:
+                result = subprocess.run(cmd, capture_output=True, text=True)
+
+                if result.returncode == 0 and result.stdout.strip():
+                    lines = result.stdout.strip().split("\n")
+                    verbose_print(f"Git {cmd_name} diff output:")
+                    for line in lines:
+                        verbose_print(f"  {line}")
+
+                    # Parse the summary line (last line if multiple files)
+                    summary_found = False
+                    for line in lines:
+                        if "file changed" in line or "files changed" in line:
+                            # Format: "X file(s) changed, Y insertion(s)(+), Z deletion(s)(-)"
+                            parts = line.split(",")
+                            verbose_print(f"Parsing summary line: {line}")
+                            summary_found = True
+
+                            # Extract files changed
+                            if "file" in parts[0]:
+                                try:
+                                    file_count = int(parts[0].split()[0])
+                                    files_changed += file_count
+                                    verbose_print(f"Found {file_count} files changed")
+                                except (ValueError, IndexError) as e:
+                                    verbose_print(f"Error parsing file count: {e}")
+
+                            # Extract insertions
+                            for part in parts:
+                                if "insertion" in part:
+                                    try:
+                                        added = int(part.strip().split()[0])
+                                        lines_added += added
+                                        verbose_print(f"Found {added} lines added")
+                                    except (ValueError, IndexError) as e:
+                                        verbose_print(f"Error parsing insertions: {e}")
+                                elif "deletion" in part:
+                                    try:
+                                        deleted = int(part.strip().split()[0])
+                                        lines_deleted += deleted
+                                        verbose_print(f"Found {deleted} lines deleted")
+                                    except (ValueError, IndexError) as e:
+                                        verbose_print(f"Error parsing deletions: {e}")
+
+                    # Only count individual files if no summary was found
+                    if not summary_found:
+                        for line in lines:
+                            if " | " in line and (
+                                "++" in line or "--" in line or "+-" in line
+                            ):
+                                # Individual file line format: "filename | 5 +++--"
+                                files_changed += 1
+                                verbose_print(f"Found individual file change: {line}")
+
+            verbose_print(
+                f"Final git stats: {lines_added} added, {lines_deleted} deleted, {files_changed} files"
+            )
+            return lines_added, lines_deleted, files_changed
+        except Exception as e:
+            verbose_print(f"Error getting git stats: {e}")
+            return 0, 0, 0
 
     def start_monitoring(self):
         """Start the file system monitoring."""
@@ -426,8 +470,14 @@ class EnhancedActivityTracker:
         if total_duration > 0:
             # Get commit info and git stats
             commit_message = self._get_commit_message(repo_path)
-            files_changed = self.file_changes.get(repo_path, 0)
-            lines_added, lines_deleted = self.get_git_stats(repo_path)
+            lines_added, lines_deleted, git_files_changed = self.get_git_stats(
+                repo_path
+            )
+
+            # Use the larger of file change counter or git stats for files changed
+            files_changed = max(
+                len(self.file_changes.get(repo_path, set())), git_files_changed
+            )
 
             verbose_print(f"Commit details:")
             verbose_print(f"  - Hash: {commit_hash[:7]}")
@@ -484,7 +534,7 @@ class EnhancedActivityTracker:
 
             # Reset counters
             self.accumulated_time[repo_path] = 0
-            self.file_changes[repo_path] = 0
+            self.file_changes[repo_path] = set()  # Reset to empty set
         else:
             verbose_print("No accumulated time found - session not saved")
 
@@ -523,7 +573,7 @@ class EnhancedActivityTracker:
             for repo_path, (start, last) in self.active_sessions.items():
                 if start:
                     duration = time.time() - start
-                    files = self.file_changes.get(repo_path, 0)
+                    files = len(self.file_changes.get(repo_path, set()))
                     table.add_row(
                         os.path.basename(repo_path),
                         "🟢 Active",
@@ -534,7 +584,7 @@ class EnhancedActivityTracker:
             # Show accumulated time
             for repo_path, duration in self.accumulated_time.items():
                 if duration > 0:
-                    files = self.file_changes.get(repo_path, 0)
+                    files = len(self.file_changes.get(repo_path, set()))
                     table.add_row(
                         os.path.basename(repo_path),
                         "🟡 Accumulated",
@@ -581,8 +631,11 @@ class EnhancedActivityTracker:
         # Extract task name from commit message
         task_name = extract_task_name(commit_message)
 
-        files_changed = self.file_changes.get(repo_path, 0)
-        lines_added, lines_deleted = self.get_git_stats(repo_path)
+        lines_added, lines_deleted, git_files_changed = self.get_git_stats(repo_path)
+        # Use the larger of file change counter or git stats for files changed
+        files_changed = max(
+            len(self.file_changes.get(repo_path, set())), git_files_changed
+        )
         total_lines = lines_added + lines_deleted
         productivity_score = self.calculate_productivity_score(
             duration, files_changed, total_lines
@@ -852,10 +905,10 @@ class EnhancedChangeHandler(FileSystemEventHandler):
         now = time.time()
         start, last = self.tracker.active_sessions.get(repo_path, (None, None))
 
-        # Update file change counter
-        self.tracker.file_changes[repo_path] = (
-            self.tracker.file_changes.get(repo_path, 0) + 1
-        )
+        # Update file change set to track unique files
+        if repo_path not in self.tracker.file_changes:
+            self.tracker.file_changes[repo_path] = set()
+        self.tracker.file_changes[repo_path].add(event.src_path)
 
         if start is None:
             self.tracker.active_sessions[repo_path] = (now, now)
