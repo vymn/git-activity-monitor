@@ -47,31 +47,44 @@ def seed_test_database():
         """
     )
 
-    # Seed activity_sessions with random data
+    # Clear existing data first
+    cursor.execute("DELETE FROM activity_sessions")
+    cursor.execute("DELETE FROM daily_stats")
+
+    # Seed activity_sessions with random data spread across 30 days
     now = datetime.now()
-    for i in range(50):  # Generate 50 sessions
-        start_time = now - timedelta(
-            days=random.randint(0, 30),
-            hours=random.randint(0, 23),
-            minutes=random.randint(0, 59),
+    for i in range(150):  # Generate 150 sessions (5 per day average)
+        # Pick a random day in the last 30 days
+        days_ago = random.randint(0, 29)
+        session_date = now - timedelta(days=days_ago)
+
+        # Create session times within that specific day
+        start_time = session_date.replace(
+            hour=random.randint(8, 20),  # Work hours 8 AM to 8 PM
+            minute=random.randint(0, 59),
+            second=0,
+            microsecond=0,
         )
-        end_time = start_time + timedelta(minutes=random.randint(10, 120))
+        end_time = start_time + timedelta(
+            minutes=random.randint(15, 180)
+        )  # 15 min to 3 hours
         duration_seconds = int((end_time - start_time).total_seconds())
+
         repo_name = f"repo_{random.randint(1, 5)}"
         repo_path = f"/path/to/{repo_name}"
         commit_hash = f"{random.randint(1000000, 9999999):x}"
-        commit_message = f"Commit message {i}"
-        files_changed = random.randint(0, 10)
-        lines_added = random.randint(0, 500)
-        lines_deleted = random.randint(0, 500)
-        productivity_score = random.uniform(50, 100)
+        commit_message = f"Commit message {i}: {['Fix bug', 'Add feature', 'Refactor code', 'Update docs', 'Optimize performance'][random.randint(0, 4)]}"
+        files_changed = random.randint(1, 15)
+        lines_added = random.randint(5, 300)
+        lines_deleted = random.randint(0, 150)
+        productivity_score = random.uniform(40, 100)
 
         cursor.execute(
             """
             INSERT INTO activity_sessions 
             (repo_path, repo_name, start_time, end_time, duration_seconds, 
-             commit_hash, commit_message, files_changed, lines_added, lines_deleted, productivity_score)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             commit_hash, commit_message, files_changed, lines_added, lines_deleted, productivity_score, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 repo_path,
@@ -85,39 +98,30 @@ def seed_test_database():
                 lines_added,
                 lines_deleted,
                 productivity_score,
+                start_time,  # Use start_time as created_at to spread across dates
             ),
         )
 
-    # Seed daily_stats with aggregated data
-    for i in range(30):  # Generate stats for the last 30 days
-        date = (now - timedelta(days=i)).date()
-        total_time_seconds = random.randint(3600, 14400)  # Between 1 and 4 hours
-        repos_worked_on = random.randint(1, 5)
-        commits_made = random.randint(1, 10)
-        files_changed = random.randint(5, 50)
-        lines_changed = random.randint(100, 1000)
-        avg_session_duration = random.uniform(
-            600, 3600
-        )  # Between 10 minutes and 1 hour
-        productivity_score = random.uniform(50, 100)
+    # Remove the daily_stats seeding since it will be calculated from activity_sessions
+    # The analytics functions will calculate this on-the-fly from the session data
 
-        cursor.execute(
-            """
-            INSERT INTO daily_stats 
-            (date, total_time_seconds, repos_worked_on, commits_made, files_changed, lines_changed, avg_session_duration, productivity_score)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                date,
-                total_time_seconds,
-                repos_worked_on,
-                commits_made,
-                files_changed,
-                lines_changed,
-                avg_session_duration,
-                productivity_score,
-            ),
-        )
+    print(f"✅ Seeded {150} sessions across {30} days")
+    print(f"📅 Date range: {(now - timedelta(days=29)).date()} to {now.date()}")
+
+    # Show sample of what was created
+    cursor.execute(
+        """
+        SELECT DATE(created_at) as date, COUNT(*) as sessions, SUM(duration_seconds)/3600.0 as hours
+        FROM activity_sessions 
+        GROUP BY DATE(created_at) 
+        ORDER BY date DESC 
+        LIMIT 5
+    """
+    )
+    sample_data = cursor.fetchall()
+    print("\n📊 Sample daily data:")
+    for date, sessions, hours in sample_data:
+        print(f"  {date}: {sessions} sessions, {hours:.1f} hours")
 
     conn.commit()
     conn.close()
