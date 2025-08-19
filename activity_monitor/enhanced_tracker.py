@@ -1474,7 +1474,7 @@ class PDFReportGenerator:
         )
 
     def generate_repo_timesheet(self, days=30, repo=None):
-        """Generate a PDF timesheet grouped by repository."""
+        """Generate a PDF timesheet grouped by repository, showing task names."""
         df = self.db.get_sessions(days)
         if repo:
             df = df[df["repo_name"] == repo]
@@ -1498,8 +1498,8 @@ class PDFReportGenerator:
                 "Start",
                 "End",
                 "Duration (min)",
+                "Task Name",
                 "Commit",
-                "Message",
             ]
         ]
         for _, row in df.iterrows():
@@ -1516,6 +1516,8 @@ class PDFReportGenerator:
             duration = (
                 f"{row['duration_seconds']/60:.1f}" if row["duration_seconds"] else ""
             )
+            # Extract task name from commit message
+            task_name = extract_task_name(str(row.get("commit_message", "")))
             data.append(
                 [
                     row["repo_name"],
@@ -1523,9 +1525,8 @@ class PDFReportGenerator:
                     start,
                     end,
                     duration,
-                    str(row["commit_hash"])[:7] if row["commit_hash"] else "",
-                    str(row["commit_message"])[:40]
-                    + ("..." if len(str(row["commit_message"])) > 40 else ""),
+                    task_name,
+                    str(row["commit_hash"])[0:7] if row["commit_hash"] else "",
                 ]
             )
         table = RLTable(data)
@@ -1561,7 +1562,7 @@ class PDFReportGenerator:
             return None
 
     def generate_daily_timesheet(self, days=30, repo=None):
-        """Generate a PDF timesheet grouped by day."""
+        """Generate a PDF timesheet grouped by day, showing task names."""
         df = self.db.get_sessions(days)
         if repo:
             df = df[df["repo_name"] == repo]
@@ -1580,12 +1581,14 @@ class PDFReportGenerator:
         # Group by date
         df["date"] = pd.to_datetime(df["created_at"]).dt.date
         grouped = df.groupby("date")
-        data = [["Date", "Total Time (h)", "Sessions", "Repositories"]]
+        data = [["Date", "Total Time (h)", "Tasks", "Repositories"]]
         for date, group in grouped:
             total_time = group["duration_seconds"].sum() / 3600
-            sessions = len(group)
+            # Aggregate unique task names for the day
+            tasks = sorted(set(extract_task_name(str(msg)) for msg in group["commit_message"]))
+            tasks_str = ", ".join(tasks)
             repos = ", ".join(sorted(group["repo_name"].unique()))
-            data.append([str(date), f"{total_time:.2f}", str(sessions), repos])
+            data.append([str(date), f"{total_time:.2f}", tasks_str, repos])
         table = RLTable(data)
         table.setStyle(
             TableStyle(
@@ -1621,7 +1624,7 @@ class PDFReportGenerator:
             return None
 
     def generate_monthly_timesheet(self, repo=None):
-        """Generate a PDF timesheet grouped by month."""
+        """Generate a PDF timesheet grouped by month, showing task names."""
         df = self.db.get_sessions(365)  # Get up to a year
         if repo:
             df = df[df["repo_name"] == repo]
@@ -1641,12 +1644,14 @@ class PDFReportGenerator:
         title = f"Monthly Timesheet{' for ' + repo if repo else ''}"
         story.append(Paragraph(title, styles["Title"]))
         story.append(Spacer(1, 20))
-        data = [["Month", "Total Time (h)", "Sessions", "Repositories"]]
+        data = [["Month", "Total Time (h)", "Tasks", "Repositories"]]
         for month, group in grouped:
             total_time = group["duration_seconds"].sum() / 3600
-            sessions = len(group)
+            # Aggregate unique task names for the month
+            tasks = sorted(set(extract_task_name(str(msg)) for msg in group["commit_message"]))
+            tasks_str = ", ".join(tasks)
             repos = ", ".join(sorted(group["repo_name"].unique()))
-            data.append([str(month), f"{total_time:.2f}", str(sessions), repos])
+            data.append([str(month), f"{total_time:.2f}", tasks_str, repos])
         table = RLTable(data)
         table.setStyle(
             TableStyle(
