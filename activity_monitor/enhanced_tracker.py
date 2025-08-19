@@ -736,7 +736,7 @@ class EnhancedActivityTracker:
 
             f.write("---\n\n")
 
-        console.print(f"[green]📝 Markdown log updated: {today_file}[/green]")
+        console.print(f"[green]📝 Markdown log updated: {today_file}")
 
     def generate_markdown_summary(self, period="week"):
         """Generate weekly or monthly Markdown summary reports."""
@@ -1292,9 +1292,18 @@ class PDFReportGenerator:
         story.append(Paragraph("📅 Daily Activity Breakdown", heading_style))
 
         daily_data = [
-            ["Date", "Hours", "Sessions", "Repos", "Productivity", "Files", "Lines"]
+            ["Date", "Hours", "Sessions", "Repos", "Productivity", "Top Repository"]
         ]
         for _, row in df.iterrows():
+            # Find top repo for this date
+            day_sessions = sessions_df[
+                sessions_df["created_at"].str.contains(str(row["date"]))
+            ]
+            top_repo = "N/A"
+            if not day_sessions.empty:
+                repo_times = day_sessions.groupby("repo_name")["duration_seconds"].sum()
+                top_repo = repo_times.idxmax() if not repo_times.empty else "N/A"
+
             daily_data.append(
                 [
                     str(row["date"]),
@@ -1302,8 +1311,7 @@ class PDFReportGenerator:
                     str(row["sessions_count"]),
                     str(row["repos_count"]),
                     f"{row['avg_productivity']:.1f}/100",
-                    str(row["files_changed"]),
-                    str(row["lines_changed"]),
+                    top_repo,
                 ]
             )
 
@@ -1465,6 +1473,214 @@ class PDFReportGenerator:
             )
         )
 
+    def generate_repo_timesheet(self, days=30, repo=None):
+        """Generate a PDF timesheet grouped by repository."""
+        df = self.db.get_sessions(days)
+        if repo:
+            df = df[df["repo_name"] == repo]
+        if df.empty:
+            console.print("[yellow]No data available for repo timesheet PDF[/yellow]")
+            return None
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"repo_timesheet_{repo or 'all'}_{timestamp}.pdf"
+        pdf_path = os.path.join(LOG_DIR, filename)
+        doc = SimpleDocTemplate(pdf_path, pagesize=letter)
+        story = []
+        styles = getSampleStyleSheet()
+        title = f"Repository Timesheet{' for ' + repo if repo else ''}"
+        story.append(Paragraph(title, styles["Title"]))
+        story.append(Spacer(1, 20))
+        # Table header
+        data = [
+            [
+                "Repository",
+                "Date",
+                "Start",
+                "End",
+                "Duration (min)",
+                "Commit",
+                "Message",
+            ]
+        ]
+        for _, row in df.iterrows():
+            start = (
+                pd.to_datetime(row["start_time"]).strftime("%Y-%m-%d %H:%M")
+                if row["start_time"]
+                else ""
+            )
+            end = (
+                pd.to_datetime(row["end_time"]).strftime("%Y-%m-%d %H:%M")
+                if row["end_time"]
+                else ""
+            )
+            duration = (
+                f"{row['duration_seconds']/60:.1f}" if row["duration_seconds"] else ""
+            )
+            data.append(
+                [
+                    row["repo_name"],
+                    pd.to_datetime(row["created_at"]).strftime("%Y-%m-%d"),
+                    start,
+                    end,
+                    duration,
+                    str(row["commit_hash"])[:7] if row["commit_hash"] else "",
+                    str(row["commit_message"])[:40]
+                    + ("..." if len(str(row["commit_message"])) > 40 else ""),
+                ]
+            )
+        table = RLTable(data)
+        table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), HexColor("#2980B9")),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+                    ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                    ("FONTSIZE", (0, 0), (-1, 0), 10),
+                    ("FONTSIZE", (0, 1), (-1, -1), 8),
+                    ("BOTTOMPADDING", (0, 0), (-1, 0), 12),
+                    ("BACKGROUND", (0, 1), (-1, -1), HexColor("#EBF5FB")),
+                    ("GRID", (0, 0), (-1, -1), 1, colors.black),
+                ]
+            )
+        )
+        story.append(table)
+        story.append(Spacer(1, 20))
+        story.append(
+            Paragraph(
+                f"Generated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                styles["Normal"],
+            )
+        )
+        try:
+            doc.build(story)
+            console.print(f"[green]📄 Repo timesheet PDF generated: {pdf_path}[/green]")
+            return pdf_path
+        except Exception as e:
+            error_print(f"Error generating repo timesheet PDF: {e}")
+            return None
+
+    def generate_daily_timesheet(self, days=30, repo=None):
+        """Generate a PDF timesheet grouped by day."""
+        df = self.db.get_sessions(days)
+        if repo:
+            df = df[df["repo_name"] == repo]
+        if df.empty:
+            console.print("[yellow]No data available for daily timesheet PDF[/yellow]")
+            return None
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"daily_timesheet_{repo or 'all'}_{timestamp}.pdf"
+        pdf_path = os.path.join(LOG_DIR, filename)
+        doc = SimpleDocTemplate(pdf_path, pagesize=letter)
+        story = []
+        styles = getSampleStyleSheet()
+        title = f"Daily Timesheet{' for ' + repo if repo else ''}"
+        story.append(Paragraph(title, styles["Title"]))
+        story.append(Spacer(1, 20))
+        # Group by date
+        df["date"] = pd.to_datetime(df["created_at"]).dt.date
+        grouped = df.groupby("date")
+        data = [["Date", "Total Time (h)", "Sessions", "Repositories"]]
+        for date, group in grouped:
+            total_time = group["duration_seconds"].sum() / 3600
+            sessions = len(group)
+            repos = ", ".join(sorted(group["repo_name"].unique()))
+            data.append([str(date), f"{total_time:.2f}", str(sessions), repos])
+        table = RLTable(data)
+        table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), HexColor("#16A085")),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+                    ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                    ("FONTSIZE", (0, 0), (-1, 0), 10),
+                    ("FONTSIZE", (0, 1), (-1, -1), 8),
+                    ("BOTTOMPADDING", (0, 0), (-1, 0), 12),
+                    ("BACKGROUND", (0, 1), (-1, -1), HexColor("#E8F8F5")),
+                    ("GRID", (0, 0), (-1, -1), 1, colors.black),
+                ]
+            )
+        )
+        story.append(table)
+        story.append(Spacer(1, 20))
+        story.append(
+            Paragraph(
+                f"Generated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                styles["Normal"],
+            )
+        )
+        try:
+            doc.build(story)
+            console.print(
+                f"[green]📄 Daily timesheet PDF generated: {pdf_path}[/green]"
+            )
+            return pdf_path
+        except Exception as e:
+            error_print(f"Error generating daily timesheet PDF: {e}")
+            return None
+
+    def generate_monthly_timesheet(self, repo=None):
+        """Generate a PDF timesheet grouped by month."""
+        df = self.db.get_sessions(365)  # Get up to a year
+        if repo:
+            df = df[df["repo_name"] == repo]
+        if df.empty:
+            console.print(
+                "[yellow]No data available for monthly timesheet PDF[/yellow]"
+            )
+            return None
+        df["month"] = pd.to_datetime(df["created_at"]).dt.to_period("M")
+        grouped = df.groupby("month")
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"monthly_timesheet_{repo or 'all'}_{timestamp}.pdf"
+        pdf_path = os.path.join(LOG_DIR, filename)
+        doc = SimpleDocTemplate(pdf_path, pagesize=letter)
+        story = []
+        styles = getSampleStyleSheet()
+        title = f"Monthly Timesheet{' for ' + repo if repo else ''}"
+        story.append(Paragraph(title, styles["Title"]))
+        story.append(Spacer(1, 20))
+        data = [["Month", "Total Time (h)", "Sessions", "Repositories"]]
+        for month, group in grouped:
+            total_time = group["duration_seconds"].sum() / 3600
+            sessions = len(group)
+            repos = ", ".join(sorted(group["repo_name"].unique()))
+            data.append([str(month), f"{total_time:.2f}", str(sessions), repos])
+        table = RLTable(data)
+        table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), HexColor("#8E44AD")),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+                    ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                    ("FONTSIZE", (0, 0), (-1, 0), 10),
+                    ("FONTSIZE", (0, 1), (-1, -1), 8),
+                    ("BOTTOMPADDING", (0, 0), (-1, 0), 12),
+                    ("BACKGROUND", (0, 1), (-1, -1), HexColor("#F5EEF8")),
+                    ("GRID", (0, 0), (-1, -1), 1, colors.black),
+                ]
+            )
+        )
+        story.append(table)
+        story.append(Spacer(1, 20))
+        story.append(
+            Paragraph(
+                f"Generated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                styles["Normal"],
+            )
+        )
+        try:
+            doc.build(story)
+            console.print(
+                f"[green]📄 Monthly timesheet PDF generated: {pdf_path}[/green]"
+            )
+            return pdf_path
+        except Exception as e:
+            error_print(f"Error generating monthly timesheet PDF: {e}")
+            return None
+
 
 # CLI Commands
 def cmd_start(verbose=False):
@@ -1604,10 +1820,18 @@ def cmd_export(format="csv", days=30):
     analytics.export_data(format, days)
 
 
-def cmd_pdf(days=30, report_type="comprehensive"):
-    """Generate PDF report."""
+def cmd_pdf(days=30, report_type="comprehensive", sheet="default", repo=None):
+    """Generate PDF report or timesheet."""
     analytics = Analytics()
-    pdf_path = analytics.generate_pdf_report(days, report_type)
+    pdfgen = PDFReportGenerator(analytics.db)
+    if sheet == "repo":
+        pdf_path = pdfgen.generate_repo_timesheet(days, repo)
+    elif sheet == "daily":
+        pdf_path = pdfgen.generate_daily_timesheet(days, repo)
+    elif sheet == "monthly":
+        pdf_path = pdfgen.generate_monthly_timesheet(repo)
+    else:
+        pdf_path = analytics.generate_pdf_report(days, report_type)
     if pdf_path:
         console.print(f"[green]📄 PDF report generated successfully![/green]")
         console.print(f"Location: {pdf_path}")
@@ -1682,6 +1906,18 @@ Examples:
         default="comprehensive",
         help="Type of report to generate",
     )
+    pdf_parser.add_argument(
+        "--sheet",
+        choices=["default", "repo", "daily", "monthly"],
+        default="default",
+        help="Timesheet type: repo, daily, monthly, or default report",
+    )
+    pdf_parser.add_argument(
+        "--repo",
+        type=str,
+        default=None,
+        help="Repository name to filter (for repo/daily/monthly sheets)",
+    )
 
     args = parser.parse_args()
 
@@ -1700,7 +1936,7 @@ Examples:
     elif args.command == "export":
         cmd_export(args.format, args.days)
     elif args.command == "pdf":
-        cmd_pdf(args.days, args.type)
+        cmd_pdf(args.days, args.type, args.sheet, args.repo)
     elif args.command == "debug":
         cmd_debug()
     else:
