@@ -1914,80 +1914,277 @@ def cmd_pdf(days=30, report_type="comprehensive", sheet="default", repo=None):
 def main():
     """Main CLI interface."""
     parser = argparse.ArgumentParser(
-        description="🚀 Enhanced Activity Monitor - Track your coding productivity",
+        description="🚀 Enhanced Activity Monitor - Track your coding productivity with advanced Git integration",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Examples:
-  %(prog)s start              Start monitoring activity
-  %(prog)s status             Show current status
-  %(prog)s report --days 30   Generate 30-day report
-  %(prog)s export --format csv Export data as CSV
-  %(prog)s pdf --days 7 --type summary Generate PDF report
+📋 COMMAND EXAMPLES:
+
+🚀 MONITORING:
+  %(prog)s start                          Start monitoring (basic mode)
+  %(prog)s start --verbose               Start with detailed logging
+  %(prog)s status                        Show current activity status
+  %(prog)s test                          Test file monitoring setup
+  %(prog)s debug                         Show system debug information
+
+📊 REPORTS & ANALYTICS:
+  %(prog)s report                        Generate 7-day activity report
+  %(prog)s report --days 30              Generate 30-day activity report
+  %(prog)s summary                       Generate weekly markdown summary
+  %(prog)s summary --period month        Generate monthly markdown summary
+
+📄 PDF REPORTS:
+  %(prog)s pdf                           Generate comprehensive PDF report (30 days)
+  %(prog)s pdf --days 7                  Generate 7-day comprehensive report
+  %(prog)s pdf --type summary            Generate summary report (vs comprehensive)
+  
+📋 PDF TIMESHEETS:
+  %(prog)s pdf --sheet repo              Repository-based timesheet
+  %(prog)s pdf --sheet daily             Daily timesheet with task summaries
+  %(prog)s pdf --sheet monthly           Monthly timesheet with task summaries
+  %(prog)s pdf --sheet repo --repo myapp Timesheet for specific repository
+  %(prog)s pdf --sheet daily --days 14   Daily timesheet for last 14 days
+
+📤 DATA EXPORT:
+  %(prog)s export                        Export last 30 days as CSV
+  %(prog)s export --format json          Export as JSON format
+  %(prog)s export --format csv --days 7  Export last 7 days as CSV
+
+🎯 FEATURES:
+  • Real-time Git repository monitoring
+  • Automatic commit detection and session logging
+  • Productivity scoring based on code changes
+  • Task extraction from commit messages
+  • Multiple output formats (PDF, CSV, JSON, Markdown)
+  • Rich CLI with colored output and tables
         """,
     )
 
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
     # Start command
-    start_parser = subparsers.add_parser("start", help="Start activity monitoring")
+    start_parser = subparsers.add_parser(
+        "start", 
+        help="Start real-time activity monitoring",
+        description="🚀 Start monitoring file changes in Git repositories. Tracks coding sessions, detects commits, and logs productivity metrics in real-time.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  %(prog)s start                    Start monitoring in normal mode
+  %(prog)s start -v                 Start with verbose logging output
+  %(prog)s start --verbose          Same as -v, shows detailed debug info
+
+The monitor will:
+  • Track file changes in all Git repositories under the monitor path
+  • Detect new commits and calculate session durations
+  • Score productivity based on files changed and lines modified
+  • Generate daily markdown logs with task summaries
+  • Display real-time status updates in the terminal
+        """
+    )
     start_parser.add_argument(
-        "--verbose", "-v", action="store_true", help="Enable verbose output"
+        "--verbose", "-v", action="store_true", 
+        help="Enable verbose output with detailed logging and debug information"
     )
 
     # Test command
-    test_parser = subparsers.add_parser("test", help="Test file monitoring setup")
+    test_parser = subparsers.add_parser(
+        "test", 
+        help="Test file monitoring setup and configuration",
+        description="🧪 Verify that the monitoring system can detect Git repositories and that all paths are configured correctly.",
+        epilog="""
+This command will check:
+  • Monitor path exists and is accessible
+  • Git repositories are found in the monitor path  
+  • Database connection is working
+  • Configuration is valid
+
+Use this before running 'start' to ensure everything is set up properly.
+        """
+    )
 
     # Status command
-    status_parser = subparsers.add_parser("status", help="Show current status")
+    status_parser = subparsers.add_parser(
+        "status", 
+        help="Show current activity status and recent sessions",
+        description="📊 Display current monitoring status, recent activity sessions, and a 7-day productivity overview with colorful tables.",
+        epilog="""
+Shows:
+  • Recent coding sessions (last 24 hours)
+  • Repository activity breakdown
+  • Time spent per repository
+  • Productivity scores and trends
+  • Commit messages and task summaries
+
+Perfect for a quick overview of your recent coding activity.
+        """
+    )
 
     # Debug command
-    debug_parser = subparsers.add_parser("debug", help="Show debug information")
+    debug_parser = subparsers.add_parser(
+        "debug", 
+        help="Show system debug information and configuration",
+        description="🔧 Display detailed system information for troubleshooting configuration issues, database status, and path settings.",
+        epilog="""
+Debug information includes:
+  • Database path and session count
+  • Monitor path configuration
+  • Idle threshold settings
+  • Log directory location
+  • System configuration validation
+
+Use this when troubleshooting issues with monitoring or data collection.
+        """
+    )
 
     # Summary command
     summary_parser = subparsers.add_parser(
-        "summary", help="Generate markdown summaries"
+        "summary", 
+        help="Generate markdown summary reports",
+        description="📝 Generate comprehensive markdown summary reports with productivity insights, repository analysis, and recommendations.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  %(prog)s summary                  Generate weekly summary (default)
+  %(prog)s summary --period week    Generate weekly summary (last 7 days)
+  %(prog)s summary --period month   Generate monthly summary (last 30 days)
+
+Generated reports include:
+  • Overview statistics (total time, sessions, repositories)
+  • Daily activity breakdown table
+  • Repository analysis with time spent per repo
+  • Productivity insights and recommendations
+  • Goals and improvement suggestions
+
+Reports are saved as markdown files in the summaries/ directory.
+        """
     )
     summary_parser.add_argument(
-        "--period", choices=["week", "month"], default="week", help="Summary period"
+        "--period", choices=["week", "month"], default="week", 
+        help="Summary period: 'week' for 7 days (default) or 'month' for 30 days"
     )
 
     # Report command
-    report_parser = subparsers.add_parser("report", help="Generate analytics report")
+    report_parser = subparsers.add_parser(
+        "report", 
+        help="Generate detailed analytics reports with charts",
+        description="📊 Generate detailed activity reports with rich CLI tables and save productivity charts as HTML files.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  %(prog)s report                   Generate 7-day report (default)
+  %(prog)s report --days 30         Generate 30-day report
+  %(prog)s report --days 1          Generate report for today only
+
+Features:
+  • Colorful CLI table with daily breakdown
+  • Interactive productivity chart (saved as HTML)
+  • Time spent, repository count, session count
+  • Files changed and lines modified statistics
+  • Productivity scores with visual indicators
+
+Charts are saved to the log directory as 'productivity_chart.html'.
+        """
+    )
     report_parser.add_argument(
-        "--days", type=int, default=30, help="Number of days to include"
+        "--days", type=int, default=7, 
+        help="Number of days to include in report (default: 7)"
     )
 
     # Export command
-    export_parser = subparsers.add_parser("export", help="Export activity data")
-    export_parser.add_argument(
-        "--format", choices=["csv", "json"], default="csv", help="Export format"
+    export_parser = subparsers.add_parser(
+        "export", 
+        help="Export activity data in various formats",
+        description="📤 Export your coding activity data to CSV or JSON files for further analysis, integration with other tools, or backup purposes.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  %(prog)s export                           Export last 30 days as CSV (default)
+  %(prog)s export --format csv              Export as CSV format
+  %(prog)s export --format json             Export as JSON format  
+  %(prog)s export --days 7                  Export last 7 days
+  %(prog)s export --format json --days 14   Export last 14 days as JSON
+
+Exported data includes:
+  • Repository names and file paths
+  • Session start/end times and durations
+  • Commit hashes and messages
+  • Files changed and lines added/deleted
+  • Productivity scores and timestamps
+  • Task names extracted from commit messages
+
+Files are saved with timestamps in the log directory.
+        """
     )
     export_parser.add_argument(
-        "--days", type=int, default=30, help="Number of days to export"
+        "--format", choices=["csv", "json"], default="csv", 
+        help="Export format: 'csv' for spreadsheet compatibility or 'json' for programmatic use"
+    )
+    export_parser.add_argument(
+        "--days", type=int, default=30, 
+        help="Number of days to export (default: 30)"
     )
 
     # PDF Report command
-    pdf_parser = subparsers.add_parser("pdf", help="Generate PDF report")
-    pdf_parser.add_argument(
-        "--days", type=int, default=30, help="Number of days to include in report"
+    pdf_parser = subparsers.add_parser(
+        "pdf", 
+        help="Generate professional PDF reports and timesheets",
+        description="📄 Generate beautiful PDF reports with charts, tables, and analysis. Perfect for client reports, time tracking, or productivity reviews.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+🎯 REPORT TYPES:
+  --type summary         Executive summary with key metrics
+  --type comprehensive   Full report with detailed analysis (default)
+
+📋 TIMESHEET FORMATS:
+  --sheet default        Comprehensive PDF report (default)
+  --sheet repo           Repository-based timesheet with sessions
+  --sheet daily          Daily timesheet with task summaries  
+  --sheet monthly        Monthly timesheet with task summaries
+
+📊 EXAMPLES:
+
+Basic Reports:
+  %(prog)s pdf                              Comprehensive report (30 days)
+  %(prog)s pdf --days 7                     Weekly comprehensive report
+  %(prog)s pdf --type summary               Executive summary (30 days)
+  %(prog)s pdf --days 14 --type summary     2-week executive summary
+
+Timesheets:
+  %(prog)s pdf --sheet repo                 Repository timesheet (30 days)
+  %(prog)s pdf --sheet daily                Daily timesheet (30 days)
+  %(prog)s pdf --sheet monthly              Monthly timesheet (365 days)
+  %(prog)s pdf --sheet daily --days 7       Weekly daily timesheet
+
+Repository-specific:
+  %(prog)s pdf --sheet repo --repo myapp    Timesheet for 'myapp' repository
+  %(prog)s pdf --sheet daily --repo myapp   Daily timesheet for 'myapp'
+
+🎨 PDF FEATURES:
+  • Professional styling with color-coded sections
+  • Tables with proper text wrapping for long content
+  • Executive summaries with key metrics
+  • Repository analysis and productivity insights
+  • Task extraction from commit messages
+  • Productivity scoring and recommendations
+
+All PDFs are saved with timestamps in your log directory.
+        """
     )
     pdf_parser.add_argument(
-        "--type",
-        choices=["summary", "comprehensive"],
-        default="comprehensive",
-        help="Type of report to generate",
+        "--days", type=int, default=30, 
+        help="Number of days to include in report (default: 30, monthly sheets use 365)"
     )
     pdf_parser.add_argument(
-        "--sheet",
-        choices=["default", "repo", "daily", "monthly"],
-        default="default",
-        help="Timesheet type: repo, daily, monthly, or default report",
+        "--type", choices=["summary", "comprehensive"], default="comprehensive",
+        help="Report type: 'summary' for executive overview, 'comprehensive' for detailed analysis"
     )
     pdf_parser.add_argument(
-        "--repo",
-        type=str,
-        default=None,
-        help="Repository name to filter (for repo/daily/monthly sheets)",
+        "--sheet", choices=["default", "repo", "daily", "monthly"], default="default",
+        help="Output format: 'default' for reports, 'repo'/'daily'/'monthly' for timesheets"
+    )
+    pdf_parser.add_argument(
+        "--repo", type=str, default=None,
+        help="Filter by repository name (only for timesheet formats)"
     )
 
     args = parser.parse_args()
