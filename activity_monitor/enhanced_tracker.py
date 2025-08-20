@@ -986,7 +986,15 @@ def get_repo_root(path):
 
 def extract_task_name(commit_message):
     """Extract task name from commit message."""
-    if not commit_message:
+    # Ensure we have a string
+    if commit_message is None or commit_message is False:
+        return "Unknown Task"
+
+    # Convert to string if it's not already
+    if not isinstance(commit_message, str):
+        commit_message = str(commit_message)
+
+    if not commit_message or commit_message.strip() == "":
         return "Unknown Task"
 
     # Common task patterns to look for
@@ -1165,6 +1173,16 @@ class PDFReportGenerator:
     def __init__(self, db_manager):
         self.db = db_manager
 
+    def _get_cell_style(self):
+        """Return a ParagraphStyle for table cells."""
+        return ParagraphStyle(
+            "cell",
+            fontSize=8,
+            alignment=0,  # LEFT
+            leading=10,
+            spaceAfter=2,
+        )
+
     def generate_report(self, days=30, report_type="comprehensive"):
         """Generate PDF report with charts and tables."""
         # Get data
@@ -1187,7 +1205,7 @@ class PDFReportGenerator:
 
         # Add content
         self._add_title_and_summary(story, styles, df, sessions_df, days)
-        self._add_daily_breakdown(story, styles, df)
+        self._add_daily_breakdown(story, styles, df, sessions_df)
 
         if report_type == "comprehensive" and not sessions_df.empty:
             self._add_repository_analysis(story, styles, sessions_df)
@@ -1278,7 +1296,7 @@ class PDFReportGenerator:
         story.append(summary_table)
         story.append(Spacer(1, 20))
 
-    def _add_daily_breakdown(self, story, styles, df):
+    def _add_daily_breakdown(self, story, styles, df, sessions_df):
         """Add daily activity breakdown table."""
         heading_style = ParagraphStyle(
             "CustomHeading",
@@ -1502,6 +1520,8 @@ class PDFReportGenerator:
                 "Commit",
             ]
         ]
+        cell_style = self._get_cell_style()
+
         for _, row in df.iterrows():
             start = (
                 pd.to_datetime(row["start_time"]).strftime("%Y-%m-%d %H:%M")
@@ -1517,16 +1537,25 @@ class PDFReportGenerator:
                 f"{row['duration_seconds']/60:.1f}" if row["duration_seconds"] else ""
             )
             # Extract task name from commit message
-            task_name = extract_task_name(str(row.get("commit_message", "")))
+            commit_msg = row.get("commit_message", "")
+            task_name = extract_task_name(
+                str(commit_msg) if pd.notna(commit_msg) else "General Work"
+            )
             data.append(
                 [
-                    row["repo_name"],
-                    pd.to_datetime(row["created_at"]).strftime("%Y-%m-%d"),
-                    start,
-                    end,
-                    duration,
-                    task_name,
-                    str(row["commit_hash"])[0:7] if row["commit_hash"] else "",
+                    Paragraph(row["repo_name"], cell_style),
+                    Paragraph(
+                        pd.to_datetime(row["created_at"]).strftime("%Y-%m-%d"),
+                        cell_style,
+                    ),
+                    Paragraph(start, cell_style),
+                    Paragraph(end, cell_style),
+                    Paragraph(duration, cell_style),
+                    Paragraph(task_name, cell_style),
+                    Paragraph(
+                        str(row["commit_hash"])[0:7] if row["commit_hash"] else "",
+                        cell_style,
+                    ),
                 ]
             )
         table = RLTable(data)
@@ -1558,7 +1587,10 @@ class PDFReportGenerator:
             console.print(f"[green]📄 Repo timesheet PDF generated: {pdf_path}[/green]")
             return pdf_path
         except Exception as e:
+            import traceback
+
             error_print(f"Error generating repo timesheet PDF: {e}")
+            error_print(f"Full traceback: {traceback.format_exc()}")
             return None
 
     def generate_daily_timesheet(self, days=30, repo=None):
@@ -1582,13 +1614,27 @@ class PDFReportGenerator:
         df["date"] = pd.to_datetime(df["created_at"]).dt.date
         grouped = df.groupby("date")
         data = [["Date", "Total Time (h)", "Tasks", "Repositories"]]
+        cell_style = self._get_cell_style()
+
         for date, group in grouped:
             total_time = group["duration_seconds"].sum() / 3600
             # Aggregate unique task names for the day
-            tasks = sorted(set(extract_task_name(str(msg)) for msg in group["commit_message"]))
+            tasks = sorted(
+                set(
+                    extract_task_name(str(msg) if pd.notna(msg) else "General Work")
+                    for msg in group["commit_message"]
+                )
+            )
             tasks_str = ", ".join(tasks)
             repos = ", ".join(sorted(group["repo_name"].unique()))
-            data.append([str(date), f"{total_time:.2f}", tasks_str, repos])
+            data.append(
+                [
+                    Paragraph(str(date), cell_style),
+                    Paragraph(f"{total_time:.2f}", cell_style),
+                    Paragraph(tasks_str, cell_style),
+                    Paragraph(repos, cell_style),
+                ]
+            )
         table = RLTable(data)
         table.setStyle(
             TableStyle(
@@ -1620,7 +1666,10 @@ class PDFReportGenerator:
             )
             return pdf_path
         except Exception as e:
+            import traceback
+
             error_print(f"Error generating daily timesheet PDF: {e}")
+            error_print(f"Full traceback: {traceback.format_exc()}")
             return None
 
     def generate_monthly_timesheet(self, repo=None):
@@ -1645,13 +1694,27 @@ class PDFReportGenerator:
         story.append(Paragraph(title, styles["Title"]))
         story.append(Spacer(1, 20))
         data = [["Month", "Total Time (h)", "Tasks", "Repositories"]]
+        cell_style = self._get_cell_style()
+
         for month, group in grouped:
             total_time = group["duration_seconds"].sum() / 3600
             # Aggregate unique task names for the month
-            tasks = sorted(set(extract_task_name(str(msg)) for msg in group["commit_message"]))
+            tasks = sorted(
+                set(
+                    extract_task_name(str(msg) if pd.notna(msg) else "General Work")
+                    for msg in group["commit_message"]
+                )
+            )
             tasks_str = ", ".join(tasks)
             repos = ", ".join(sorted(group["repo_name"].unique()))
-            data.append([str(month), f"{total_time:.2f}", tasks_str, repos])
+            data.append(
+                [
+                    Paragraph(str(month), cell_style),
+                    Paragraph(f"{total_time:.2f}", cell_style),
+                    Paragraph(tasks_str, cell_style),
+                    Paragraph(repos, cell_style),
+                ]
+            )
         table = RLTable(data)
         table.setStyle(
             TableStyle(
@@ -1683,7 +1746,10 @@ class PDFReportGenerator:
             )
             return pdf_path
         except Exception as e:
+            import traceback
+
             error_print(f"Error generating monthly timesheet PDF: {e}")
+            error_print(f"Full traceback: {traceback.format_exc()}")
             return None
 
 
