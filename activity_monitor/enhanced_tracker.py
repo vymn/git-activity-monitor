@@ -1963,7 +1963,7 @@ def main():
 
     # Start command
     start_parser = subparsers.add_parser(
-        "start", 
+        "start",
         help="Start real-time activity monitoring",
         description="🚀 Start monitoring file changes in Git repositories. Tracks coding sessions, detects commits, and logs productivity metrics in real-time.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -1979,16 +1979,18 @@ The monitor will:
   • Score productivity based on files changed and lines modified
   • Generate daily markdown logs with task summaries
   • Display real-time status updates in the terminal
-        """
+        """,
     )
     start_parser.add_argument(
-        "--verbose", "-v", action="store_true", 
-        help="Enable verbose output with detailed logging and debug information"
+        "--verbose",
+        "-v",
+        action="store_true",
+        help="Enable verbose output with detailed logging and debug information",
     )
 
     # Test command
     test_parser = subparsers.add_parser(
-        "test", 
+        "test",
         help="Test file monitoring setup and configuration",
         description="🧪 Verify that the monitoring system can detect Git repositories and that all paths are configured correctly.",
         epilog="""
@@ -1999,12 +2001,12 @@ This command will check:
   • Configuration is valid
 
 Use this before running 'start' to ensure everything is set up properly.
-        """
+        """,
     )
 
     # Status command
     status_parser = subparsers.add_parser(
-        "status", 
+        "status",
         help="Show current activity status and recent sessions",
         description="📊 Display current monitoring status, recent activity sessions, and a 7-day productivity overview with colorful tables.",
         epilog="""
@@ -2016,12 +2018,12 @@ Shows:
   • Commit messages and task summaries
 
 Perfect for a quick overview of your recent coding activity.
-        """
+        """,
     )
 
     # Debug command
     debug_parser = subparsers.add_parser(
-        "debug", 
+        "debug",
         help="Show system debug information and configuration",
         description="🔧 Display detailed system information for troubleshooting configuration issues, database status, and path settings.",
         epilog="""
@@ -2033,12 +2035,12 @@ Debug information includes:
   • System configuration validation
 
 Use this when troubleshooting issues with monitoring or data collection.
-        """
+        """,
     )
 
     # Summary command
     summary_parser = subparsers.add_parser(
-        "summary", 
+        "summary",
         help="Generate markdown summary reports",
         description="📝 Generate comprehensive markdown summary reports with productivity insights, repository analysis, and recommendations.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -2056,16 +2058,18 @@ Generated reports include:
   • Goals and improvement suggestions
 
 Reports are saved as markdown files in the summaries/ directory.
-        """
+        """,
     )
     summary_parser.add_argument(
-        "--period", choices=["week", "month"], default="week", 
-        help="Summary period: 'week' for 7 days (default) or 'month' for 30 days"
+        "--period",
+        choices=["week", "month"],
+        default="week",
+        help="Summary period: 'week' for 7 days (default) or 'month' for 30 days",
     )
 
     # Report command
     report_parser = subparsers.add_parser(
-        "report", 
+        "report",
         help="Generate detailed analytics reports with charts",
         description="📊 Generate detailed activity reports with rich CLI tables and save productivity charts as HTML files.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -2083,16 +2087,18 @@ Features:
   • Productivity scores with visual indicators
 
 Charts are saved to the log directory as 'productivity_chart.html'.
-        """
+        """,
     )
     report_parser.add_argument(
-        "--days", type=int, default=7, 
-        help="Number of days to include in report (default: 7)"
+        "--days",
+        type=int,
+        default=7,
+        help="Number of days to include in report (default: 7)",
     )
 
     # Export command
     export_parser = subparsers.add_parser(
-        "export", 
+        "export",
         help="Export activity data in various formats",
         description="📤 Export your coding activity data to CSV or JSON files for further analysis, integration with other tools, or backup purposes.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -2113,20 +2119,21 @@ Exported data includes:
   • Task names extracted from commit messages
 
 Files are saved with timestamps in the log directory.
-        """
+        """,
     )
     export_parser.add_argument(
-        "--format", choices=["csv", "json"], default="csv", 
-        help="Export format: 'csv' for spreadsheet compatibility or 'json' for programmatic use"
+        "--format",
+        choices=["csv", "json"],
+        default="csv",
+        help="Export format: 'csv' for spreadsheet compatibility or 'json' for programmatic use",
     )
     export_parser.add_argument(
-        "--days", type=int, default=30, 
-        help="Number of days to export (default: 30)"
+        "--days", type=int, default=30, help="Number of days to export (default: 30)"
     )
 
     # PDF Report command
     pdf_parser = subparsers.add_parser(
-        "pdf", 
+        "pdf",
         help="Generate professional PDF reports and timesheets",
         description="📄 Generate beautiful PDF reports with charts, tables, and analysis. Perfect for client reports, time tracking, or productivity reviews.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -2168,23 +2175,31 @@ Repository-specific:
   • Productivity scoring and recommendations
 
 All PDFs are saved with timestamps in your log directory.
-        """
+        """,
     )
     pdf_parser.add_argument(
-        "--days", type=int, default=30, 
-        help="Number of days to include in report (default: 30, monthly sheets use 365)"
+        "--days",
+        type=int,
+        default=30,
+        help="Number of days to include in report (default: 30, monthly sheets use 365)",
     )
     pdf_parser.add_argument(
-        "--type", choices=["summary", "comprehensive"], default="comprehensive",
-        help="Report type: 'summary' for executive overview, 'comprehensive' for detailed analysis"
+        "--type",
+        choices=["summary", "comprehensive"],
+        default="comprehensive",
+        help="Report type: 'summary' for executive overview, 'comprehensive' for detailed analysis",
     )
     pdf_parser.add_argument(
-        "--sheet", choices=["default", "repo", "daily", "monthly"], default="default",
-        help="Output format: 'default' for reports, 'repo'/'daily'/'monthly' for timesheets"
+        "--sheet",
+        choices=["default", "repo", "daily", "monthly"],
+        default="default",
+        help="Output format: 'default' for reports, 'repo'/'daily'/'monthly' for timesheets",
     )
     pdf_parser.add_argument(
-        "--repo", type=str, default=None,
-        help="Filter by repository name (only for timesheet formats)"
+        "--repo",
+        type=str,
+        default=None,
+        help="Filter by repository name (only for timesheet formats)",
     )
 
     args = parser.parse_args()
