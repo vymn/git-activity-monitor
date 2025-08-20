@@ -85,4 +85,4 @@ See `requirements.txt` for Python dependencies.
 
 ## License
 
-MIT License
+Apache License 2.0 
